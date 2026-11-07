@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "serverless-srsf"
+version = "1.0.0"
+description = "Local experiments for Marin et al.'s serverless security review"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+ssrsf = "ssrsf.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

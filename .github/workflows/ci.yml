@@ -1,0 +1,22 @@
+name: local-research-evaluation
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  local-evaluation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e .
+      - run: python -m unittest discover -s tests -v
+      - run: ssrsf evaluate --trials 30 --seed 42 --output ci-results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: local-research-evidence
+          path: ci-results/

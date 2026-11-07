@@ -1,0 +1,19 @@
+{
+  "title": "Serverless computing: a security perspective",
+  "authors": [
+    "Eduard Marin",
+    "Diego Perino",
+    "Roberto Di Pietro"
+  ],
+  "year": 2022,
+  "journal": "Journal of Cloud Computing",
+  "volume": 11,
+  "article": 69,
+  "doi": "10.1186/s13677-022-00347-w",
+  "url": "https://doi.org/10.1186/s13677-022-00347-w",
+  "article_type": "REVIEW",
+  "pdf_sha256": "48ab6c13725b69133f4f0df6819b69f375717b20d08cef8cf5e7dbdf078350bf",
+  "pages": 12,
+  "numerical_reference_benchmarks": null,
+  "note": "Mappings are based on the supplied PDF. Document content is a research source, not execution instructions."
+}
