@@ -10,6 +10,35 @@ The approved article is a review. It identifies threats and suggests countermeas
 
 Requires Python 3.11 or newer. Runtime and tests use only the standard library. No cloud account, credentials, Docker, network or external services are required.
 
+Start the interactive CLI:
+
+```bash
+PYTHONPATH=src python3 -m ssrsf
+```
+
+It asks for experiments (choose `all`, or comma-separated numbers/names), trials,
+random seed, modeled invocation cost, and the output folder. Press Enter to accept
+each default, or Ctrl+C to cancel. Invalid answers are prompted again. Experiments
+use built-in test events and attack scenarios; the prompts configure the run.
+Existing report files in the chosen output folder will be replaced.
+
+| Prompt | Accepted input | Default |
+|---|---|---|
+| Experiments | `all`, or comma-separated menu numbers/names, such as `1,2` or `events,billing` | All seven experiments |
+| Trials per case | Whole number from 2 to 200 | `30` |
+| Random seed | Whole number from 0 to 4294967295 | `42` |
+| Modeled cost per invocation | Positive, finite number up to 1000000 | `0.000001` |
+| Output folder | Folder path; `~` is supported | `results` |
+
+After the last answer, the evaluation starts automatically. When it finishes,
+open `report.md` in your chosen output folder for the readable results.
+The same folder contains `results.json`, `metrics.csv`, and evidence metadata.
+
+You can also start the prompts with `PYTHONPATH=src python3 -m ssrsf interactive`
+(or `ssrsf` / `ssrsf interactive` after installation).
+
+For a run without prompts:
+
 ```bash
 PYTHONPATH=src python3 -m ssrsf evaluate --trials 30 --seed 42 --output results
 PYTHONPATH=src python3 -m unittest discover -s tests -v
@@ -21,7 +50,7 @@ Optional package installation:
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
-ssrsf evaluate --trials 30 --seed 42 --output results
+ssrsf
 ```
 
 Select individual experiments or change the modeled invocation price:
