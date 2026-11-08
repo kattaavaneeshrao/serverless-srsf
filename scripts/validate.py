@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Retain interpreter compatibility checks against the current source/evidence.
 
-Runs Python tests only. Does not invoke a LaTeX engine or provision resources.
+Runs the Python test suite with each selected interpreter.
 """
 import argparse
 import hashlib
@@ -42,7 +42,7 @@ def main():
     payload = {'timestamp_utc': datetime.now(timezone.utc).isoformat(), 'platform': platform.platform(),
                'results_sha256': hashlib.sha256((evidence / 'results.json').read_bytes()).hexdigest(),
                'source_sha256': source['source_sha256'], 'runs': runs,
-               'limits': 'Same host; interpreter compatibility, not independent cloud or multi-host validation. No LaTeX compilation.'}
+               'limits': 'Same host; interpreter compatibility, not independent cloud or multi-host validation.'}
     output = evidence / 'validation.json'
     output.write_text(json.dumps(payload, indent=2) + '\n')
     names = {line.split('  ')[1] for line in (evidence / 'SHA256SUMS').read_text().splitlines()}

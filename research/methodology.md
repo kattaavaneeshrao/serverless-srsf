@@ -104,4 +104,4 @@ The project-designed reference comparator learns a mean and population standard 
 
 ## Interpreter compatibility evidence
 
-`scripts/validate.py` runs the full suite with explicitly selected installed interpreters on the same host and stores versions, commands, counts, exit status and complete test output in `results/validation.json`. The validation record binds to the retained results JSON hash and source hashes. Its checksum is added to `SHA256SUMS`. This distinguishes compatibility testing from independent multi-host/cloud replication. Manuscript generation rejects a missing, failing or source-mismatched validation record. No LaTeX compiler is invoked.
+`scripts/validate.py` runs the full suite with explicitly selected installed interpreters on the same host and stores versions, commands, counts, exit status and complete test output in `results/validation.json`. The validation record binds to the retained results JSON hash and source hashes. Its checksum is added to `SHA256SUMS`. This distinguishes compatibility testing from independent multi-host/cloud replication. Manuscript generation rejects a missing, failing or source-mismatched validation record.

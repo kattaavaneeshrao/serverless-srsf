@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refresh/check inline manuscript evidence. Never invokes a TeX engine."""
+"""Refresh or check inline manuscript evidence."""
 from __future__ import annotations
 
 import argparse
@@ -257,7 +257,7 @@ def main():
     if any(r['exit_code'] != 0 or r['tests'] <= 0 for r in validation['runs']):
         raise ValueError('Manuscript requires successful recorded tests')
     if args.evidence_only:
-        print('Evidence, source hashes and recorded tests verified; no manuscript read or compiled.')
+        print('Evidence, source hashes and recorded tests verified.')
         return 0
     expected_config = {'trials': 30, 'seed': 42, 'floor_ms': 8., 'unit_price': .000001}
     if any(bundle['configuration'][key] != value for key, value in expected_config.items()):
@@ -272,10 +272,10 @@ def main():
         if expected != original:
             print('Manuscript evidence differs; run scripts/paper_evidence.py', file=sys.stderr)
             return 1
-        print('Inline evidence matches checksummed results and current source. No compilation performed.')
+        print('Inline evidence matches checksummed results and current source.')
     else:
         path.write_text(expected)
-        print(f'Updated inline evidence in {path.name}. No compilation performed.')
+        print(f'Updated inline evidence in {path.name}.')
     return 0
 
 

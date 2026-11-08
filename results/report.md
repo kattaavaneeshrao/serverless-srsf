@@ -4,7 +4,7 @@ Article: [Serverless computing: a security perspective](https://doi.org/10.1186/
 
 The article is a review with qualitative comparisons and countermeasure suggestions. It supplies no numerical benchmark results to reproduce. These are newly measured local experiments, with explicitly constructed workloads.
 
-Run: 2026-11-08T05:07:07.382605+00:00; 30 trials; seed 42; Python 3.12.14.
+Run: 2026-11-08T05:13:47.292150+00:00; 30 trials; seed 42; Python 3.12.14.
 
 Raw observations, configuration, machine details and source hashes are in `results.json`. `metrics.csv` contains aggregate rates/timings. Timings include initialization and vary by host. Binomial Wilson intervals are descriptive; repeated fixtures and correlated buckets do not establish population effectiveness.
 
@@ -34,7 +34,7 @@ Execution: executed local function/service access checks.
 | Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |
 |---|---|---|---|
 | gateway-only-broad-role | 120/120 (100.0%; 95% CI 96.9–100.0%) | 90/90 (100.0%; 95% CI 95.9–100.0%) | 0.000 / 0.000 |
-| per-function-least-privilege | 0/120 (0.0%; 95% CI 0.0–3.1%) | 90/90 (100.0%; 95% CI 95.9–100.0%) | 0.000 / 0.000 |
+| per-function-least-privilege | 0/120 (0.0%; 95% CI 0.0–3.1%) | 90/90 (100.0%; 95% CI 95.9–100.0%) | 0.000 / 0.001 |
 
 Limits:
 
@@ -48,8 +48,8 @@ Execution: executed file integrity experiment.
 
 | Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |
 |---|---|---|---|
-| hash-locked-inventory | 0/60 (0.0%; 95% CI 0.0–6.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.107 / 0.179 |
-| untracked | 60/60 (100.0%; 95% CI 94.0–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.019 / 0.026 |
+| hash-locked-inventory | 0/60 (0.0%; 95% CI 0.0–6.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.105 / 0.148 |
+| untracked | 60/60 (100.0%; 95% CI 94.0–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.018 / 0.022 |
 
 Limits:
 
@@ -64,9 +64,9 @@ Execution: real subprocesses and temporary filesystem.
 
 | Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |
 |---|---|---|---|
-| fresh-workspace | 0/30 (0.0%; 95% CI 0.0–11.4%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 40.190 / 43.437 |
-| warm-monitored | 0/30 (0.0%; 95% CI 0.0–11.4%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 20.754 / 22.204 |
-| warm-unchecked | 30/30 (100.0%; 95% CI 88.6–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 20.102 / 22.135 |
+| fresh-workspace | 0/30 (0.0%; 95% CI 0.0–11.4%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 42.039 / 46.679 |
+| warm-monitored | 0/30 (0.0%; 95% CI 0.0–11.4%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 22.018 / 23.197 |
+| warm-unchecked | 30/30 (100.0%; 95% CI 88.6–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 21.126 / 22.582 |
 
 Limits:
 
@@ -85,9 +85,9 @@ Attacker training and testing use different calls. Both splits contain equal num
 
 | Variant | Trace role accuracy | Held-out timing role accuracy | Response p50 / p95 (ms) | Mean CPU (ms) |
 |---|---|---|---|---|
-| exposed | 60/60 (100.0%; 95% CI 94.0–100.0%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 2.828 / 3.799 | 0.022 |
-| facade-floor | 30/60 (50.0%; 95% CI 37.7–62.3%) | 52/60 (86.7%; 95% CI 75.8–93.1%) | 9.086 / 9.721 | 0.050 |
-| facade-deadline | 30/60 (50.0%; 95% CI 37.7–62.3%) | 32/60 (53.3%; 95% CI 40.9–65.4%) | 8.000 / 8.006 | 1.196 |
+| exposed | 60/60 (100.0%; 95% CI 94.0–100.0%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 2.759 / 3.785 | 0.020 |
+| facade-floor | 30/60 (50.0%; 95% CI 37.7–62.3%) | 49/60 (81.7%; 95% CI 70.1–89.4%) | 9.154 / 9.723 | 0.047 |
+| facade-deadline | 30/60 (50.0%; 95% CI 37.7–62.3%) | 30/60 (50.0%; 95% CI 37.7–62.3%) | 8.000 / 8.017 | 1.172 |
 
 Trace protection here comes from restricting the observer's exported names. A response floor is not proof against timing inference or shared-host channels.
 
@@ -109,8 +109,8 @@ Execution: concurrent requests to a local in-process replica pool.
 
 | Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |
 |---|---|---|---|
-| atomic-cutover | 0/60 (0.0%; 95% CI 0.0–6.0%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 3.643 / 6.820 |
-| rolling-stale-replicas | 60/60 (100.0%; 95% CI 94.0–100.0%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 0.592 / 1.234 |
+| atomic-cutover | 0/60 (0.0%; 95% CI 0.0–6.0%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 5.796 / 7.313 |
+| rolling-stale-replicas | 60/60 (100.0%; 95% CI 94.0–100.0%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 0.318 / 5.726 |
 
 Limits:
 
@@ -168,35 +168,35 @@ Execution: integrated local text-document workflow and component ablations.
 
 | Case | Variant | Completed / attempts | Side effect present | Evidence gap on recovery | p50 total (ms) |
 |---|---|---|---|---|---|
-| artifact-change | full | 0/30 | 0/30 | 0/30 | 2.338 |
-| artifact-change | unprotected | 30/30 | 30/30 | 0/30 | 2.822 |
-| artifact-change | without-integrity | 30/30 | 30/30 | 0/30 | 3.855 |
-| audit-entry-outage | full | 0/30 | 0/30 | 0/30 | 2.439 |
-| audit-entry-outage | unprotected | 30/30 | 30/30 | 0/30 | 2.811 |
-| audit-entry-outage | without-audit | 30/30 | 30/30 | 0/30 | 2.875 |
-| audit-exit-outage | full | 0/30 | 30/30 | 30/30 | 5.375 |
-| audit-exit-outage | unprotected | 30/30 | 30/30 | 0/30 | 3.362 |
-| audit-exit-outage | without-audit | 30/30 | 30/30 | 0/30 | 3.701 |
-| legitimate-workflow | full | 30/30 | 0/30 | 0/30 | 5.051 |
-| legitimate-workflow | unprotected | 30/30 | 0/30 | 0/30 | 3.213 |
-| policy-expansion | full | 0/30 | 0/30 | 0/30 | 2.587 |
-| policy-expansion | unprotected | 30/30 | 0/30 | 0/30 | 2.143 |
-| policy-expansion | without-gate | 30/30 | 0/30 | 0/30 | 2.153 |
-| private-telemetry | full | 0/30 | 30/30 | 0/30 | 3.951 |
-| private-telemetry | unprotected | 30/30 | 30/30 | 0/30 | 2.844 |
-| private-telemetry | without-telemetry | 30/30 | 30/30 | 0/30 | 3.967 |
-| replaced-target | full | 0/30 | 30/30 | 0/30 | 5.903 |
-| replaced-target | unprotected | 30/30 | 0/30 | 0/30 | 3.787 |
-| replaced-target | without-broker | 30/30 | 0/30 | 0/30 | 6.084 |
-| replayed-grant | full | 0/30 | 0/30 | 0/30 | 5.421 |
-| replayed-grant | unprotected | 30/30 | 0/30 | 0/30 | 3.189 |
-| replayed-grant | without-broker | 30/30 | 0/30 | 0/30 | 4.427 |
-| unapproved-purge | full | 0/30 | 30/30 | 0/30 | 4.057 |
-| unapproved-purge | unprotected | 30/30 | 0/30 | 0/30 | 3.254 |
-| unapproved-purge | without-broker | 30/30 | 0/30 | 0/30 | 4.290 |
-| unsigned-event | full | 0/30 | 0/30 | 0/30 | 2.129 |
-| unsigned-event | unprotected | 30/30 | 30/30 | 0/30 | 2.706 |
-| unsigned-event | without-integrity | 30/30 | 30/30 | 0/30 | 3.881 |
+| artifact-change | full | 0/30 | 0/30 | 0/30 | 2.497 |
+| artifact-change | unprotected | 30/30 | 30/30 | 0/30 | 2.919 |
+| artifact-change | without-integrity | 30/30 | 30/30 | 0/30 | 3.980 |
+| audit-entry-outage | full | 0/30 | 0/30 | 0/30 | 2.529 |
+| audit-entry-outage | unprotected | 30/30 | 30/30 | 0/30 | 2.771 |
+| audit-entry-outage | without-audit | 30/30 | 30/30 | 0/30 | 2.977 |
+| audit-exit-outage | full | 0/30 | 30/30 | 30/30 | 5.556 |
+| audit-exit-outage | unprotected | 30/30 | 30/30 | 0/30 | 3.412 |
+| audit-exit-outage | without-audit | 30/30 | 30/30 | 0/30 | 3.826 |
+| legitimate-workflow | full | 30/30 | 0/30 | 0/30 | 5.203 |
+| legitimate-workflow | unprotected | 30/30 | 0/30 | 0/30 | 3.212 |
+| policy-expansion | full | 0/30 | 0/30 | 0/30 | 2.638 |
+| policy-expansion | unprotected | 30/30 | 0/30 | 0/30 | 2.207 |
+| policy-expansion | without-gate | 30/30 | 0/30 | 0/30 | 2.186 |
+| private-telemetry | full | 0/30 | 30/30 | 0/30 | 3.939 |
+| private-telemetry | unprotected | 30/30 | 30/30 | 0/30 | 2.902 |
+| private-telemetry | without-telemetry | 30/30 | 30/30 | 0/30 | 4.251 |
+| replaced-target | full | 0/30 | 30/30 | 0/30 | 5.884 |
+| replaced-target | unprotected | 30/30 | 0/30 | 0/30 | 3.754 |
+| replaced-target | without-broker | 30/30 | 0/30 | 0/30 | 6.138 |
+| replayed-grant | full | 0/30 | 0/30 | 0/30 | 5.501 |
+| replayed-grant | unprotected | 30/30 | 0/30 | 0/30 | 3.290 |
+| replayed-grant | without-broker | 30/30 | 0/30 | 0/30 | 4.552 |
+| unapproved-purge | full | 0/30 | 30/30 | 0/30 | 4.129 |
+| unapproved-purge | unprotected | 30/30 | 0/30 | 0/30 | 3.279 |
+| unapproved-purge | without-broker | 30/30 | 0/30 | 0/30 | 4.486 |
+| unsigned-event | full | 0/30 | 0/30 | 0/30 | 2.267 |
+| unsigned-event | unprotected | 30/30 | 30/30 | 0/30 | 2.856 |
+| unsigned-event | without-integrity | 30/30 | 30/30 | 0/30 | 3.981 |
 
 Completion is the attempted operation, including adversarial operations. Audit fault cases are availability/evidence outcomes, not attack-success rates. Side effects report whether the document exists after the attempted operation (before recovery).
 
@@ -280,7 +280,7 @@ Execution: two isolated Python interpreters per trial sharing durable local stat
 
 | Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |
 |---|---|---|---|
-| durable-restart | n/a | 30/30 (100.0%; 95% CI 88.6–100.0%) | 73.504 / 76.736 |
+| durable-restart | n/a | 30/30 (100.0%; 95% CI 88.6–100.0%) | 74.809 / 84.031 |
 
 Limits:
 

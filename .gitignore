@@ -10,5 +10,3 @@ dist/
 .env
 ci-results/
 results-*/
-# Manuscripts are maintained outside the repository.
-/*.tex

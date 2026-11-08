@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static LaTeX source checks only. Does not render or invoke a compiler."""
+"""Check LaTeX source structure and references."""
 import re
 import argparse
 from pathlib import Path
@@ -44,4 +44,4 @@ if cites - bib:
     raise SystemExit(f'Undefined citations: {cites - bib}')
 if re.search(r'\\(?:input|include|includegraphics)\b', source):
     raise SystemExit('Unexpected external artifact dependency in single-file manuscript')
-print(f'Static source checks passed: {len(labels)} labels, {len(cites)} cited sources. No compilation performed.')
+print(f'Static source checks passed: {len(labels)} labels, {len(cites)} cited sources.')

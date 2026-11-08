@@ -4,9 +4,46 @@
 
 The article is a security review. It does not propose the SRSF implementation or provide numerical experimental results to reproduce. This repository turns its recommendations and research questions into executable local experiments, compares vulnerable baselines with mitigations, and reports newly measured results. The article's qualitative Tables 1 and 2 are contextual comparisons, not benchmark targets.
 
-The project includes an integrated local text-document workflow with acknowledged SQLite audit, exact-policy deployment checks, independent purge approval/replay protection, controlled telemetry access and an invocation budget. The reliability scope is legitimate-request completion under controls, local rollout consistency, audit dependency failures and execution-lifecycle latency. Production uptime SLOs, error budgets and incident recovery have not been evaluated. Manuscript source files are maintained outside this repository.
+The project includes an integrated local text-document workflow with acknowledged SQLite audit, exact-policy deployment checks, independent purge approval/replay protection, controlled telemetry access and an invocation budget. The reliability scope is legitimate-request completion under controls, local rollout consistency, audit dependency failures and execution-lifecycle latency. Production uptime SLOs, error budgets and incident recovery have not been evaluated.
 
-## Run everything locally
+## Run a hands-on demo
+
+Requires Python 3.11 or newer. Start the terminal interface from this directory:
+
+```bash
+PYTHONPATH=src python3 -m ssrsf demo
+```
+
+Type your own commands at the prompt. For example:
+
+```text
+ingest This is my document about serverless security.
+read
+tamper Change this signed input
+purge
+telemetry
+auth admin-token
+approve
+purge
+purge
+audit
+quit
+```
+
+`ingest` processes your actual text, stores it in SQLite and prints the extracted text, version and classification. The tampered event is rejected. Purging before approval is rejected, and detailed telemetry requires an administrator or investigator. After switching to the administrator fixture, `approve` grants deletion of the current version for 30 seconds. The first approved purge succeeds; repeating it is rejected as replay. `audit` verifies the audit chain. You can also approve, ingest replacement text, then try purging: the old grant cannot delete the new version.
+
+The workflow has one document slot, `public/item`, and accepts at most 128 characters per document. Each ingest replaces the slot with a new version. Classification uses a word-count rule: at least 10 words is `long`, otherwise `short`. Enter `help` for all commands, including `file PATH`, `telemetry` and `budget`.
+
+To process input directly without the interactive prompt:
+
+```bash
+PYTHONPATH=src python3 -m ssrsf demo --text "A document I supplied myself"
+PYTHONPATH=src python3 -m ssrsf demo --file /path/to/input.txt
+```
+
+Demo state is temporary by default. Add `--state /tmp/my-srsf-demo` to retain documents, keys and audit records across runs. Each interactive session starts as `user-token`; use `auth admin-token` or `auth investigator-token` to explore role restrictions. These are local demonstration credentials. Installed packages also support `ssrsf demo`.
+
+## Run the evaluation and tests
 
 Requires Python 3.11 or newer. The runtime and tests use only the standard library. No cloud account, credentials, Docker, network access or external services are used.
 
@@ -102,9 +139,6 @@ with TemporaryDirectory() as directory:
 
 Tokens above are fixture credentials. SQLite FULL commits, HMAC chains and trusted Python roles implement local semantics; they do not provide cloud retention, independent OS identities or isolation from the filesystem owner. The policy language accepts exact rules only and rejects unsupported scope. Text classification is a deterministic word-count rule, not an inference service. See `research/methodology.md` for failure and recovery semantics.
 
-Manuscript source files are excluded from this repository. The optional evidence and source-checking helpers remain available for an externally maintained manuscript. Publication novelty and acceptance are not established by passing the software tests.
-
-
 ## Restart recovery and robustness probes
 
 ```bash
@@ -122,9 +156,6 @@ outcome = app.broker.investigate(operation_id, "investigator-token")
 
 The lifecycle evaluation uses two fresh interpreters and an injected exit-audit failure. The robustness evaluation compares EWMA with a fixed-training reference and fixed quota under seasonal/growing demand, legitimate crowds, intermittent attacks and ramps. All outcomes are retained, including misses and legitimate rejection.
 
-Root-level LaTeX manuscript files are ignored. The project and its measured evidence can be validated without a manuscript present.
-
-
 After regenerating the retained evaluation, retain compatibility checks and validate evidence:
 
 ```bash
@@ -132,4 +163,4 @@ python3 scripts/validate.py --python .venv/bin/python --python python3
 python3 scripts/paper_evidence.py --check --evidence-only
 ```
 
-`results/validation.json` binds test logs and interpreter versions to the exact retained source/evidence. The installed versions are detected rather than assumed. Same-host compatibility checks do not establish independent-host replication. For an external manuscript, both optional manuscript scripts accept `--manuscript PATH`; evidence refresh requires the marked evidence blocks in that file. Overleaf compilation and layout review remain with the authors.
+`results/validation.json` binds test logs and interpreter versions to the exact retained source/evidence. The installed versions are detected rather than assumed. Same-host compatibility checks do not establish independent-host replication.
