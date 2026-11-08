@@ -9,7 +9,7 @@ from .evaluation import EXPERIMENTS, evaluate, write_bundle
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog="ssrsf", description="Local evaluation of selected serverless security countermeasures (Marin et al., 2022)")
+    parser = argparse.ArgumentParser(prog="ssrsf", description="Local reference workflow and security evaluation motivated by Marin et al. (2022)")
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("evaluate", help="Run paired local experiments and write measured evidence")
     run.add_argument("--trials", type=int, default=30, help="Repeated trials per case (2–200)")

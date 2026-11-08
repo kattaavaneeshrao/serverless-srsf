@@ -1,0 +1,387 @@
+% Single-file manuscript. All result tables are inline for Overleaf.
+% Do not compile as part of artifact generation. Refresh evidence with
+% python3 scripts/paper_evidence.py; verify with the --check option.
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[margin=0.9in]{geometry}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{array,booktabs,longtable,tabularx}
+\usepackage{enumitem}
+\usepackage{xurl}
+\usepackage[hidelinks]{hyperref}
+\usepackage{caption}
+\newcolumntype{P}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\setlength{\emergencystretch}{3em}
+\setlist{leftmargin=*,itemsep=0.2em,topsep=0.3em}
+\captionsetup{font=small,labelfont=bf}
+% BEGIN EVIDENCE MACROS
+\newcommand{\TrialCount}{30}
+\newcommand{\SeedValue}{42}
+\newcommand{\RunUTC}{2026-11-08 04:33:41 UTC}
+\newcommand{\RunPython}{3.12.14}
+\newcommand{\RunPlatform}{macOS-27.0.1-arm64-arm-64bit}
+\newcommand{\ObservationCount}{4410}
+\newcommand{\TestCount}{57}
+% END EVIDENCE MACROS
+\title{Serverless Site Reliability and Security Framework}
+\author{Athul Noble \and Avaneesh Rao \and Jayesh Patil \and Neeraj}
+\date{November 2026}
+\begin{document}
+\maketitle
+\begin{abstract}
+Serverless security defenses interact with operational reliability: audit dependencies can reject otherwise valid work, quotas can discard legitimate requests, and response padding can consume CPU while retaining information leakage. Building on the threat taxonomy of Marin et al., we present SSRSF, an executable local reference framework for investigating these interactions. The implementation combines authenticated event handling, exact capabilities, artifact integrity, workspace inspection, acknowledged invocation evidence, bounded policy-change checks, independently authorized deletion and restricted telemetry. Nine experiment groups compare permissive baselines, protected variants, individual control ablations, dependency failures and a prespecified detector/quota sweep. The retained run uses \TrialCount{} trials per case. Full controls reject all tested adversarial workflow admissions, while entry- and exit-audit failures exhibit different side-effect boundaries. Separate held-out experiments show that a simple timing floor can retain role information, and billing experiments expose missed low-rate attacks and legitimate-request rejection. These findings concern controlled local fixtures and synthetic demand. The contribution is a reproducible reference artifact and an empirical account of control interactions, rather than a new security primitive, a replication of numerical results from the review, or a validation of cloud-provider isolation.
+\end{abstract}
+\noindent\textbf{Keywords:} serverless security; reference implementation; audit evidence; least privilege; Denial-of-Wallet; reproducibility.
+
+\section{Introduction}
+Function-as-a-Service (FaaS) decomposes application work into event-triggered functions whose execution environments are managed by a provider. This changes where developers can validate inputs, enforce permissions, retain incident evidence and observe resource consumption. Marin et al.\ categorize serverless security risks and identify countermeasures and open questions concerning application inputs, function privileges, dependencies, workflow information exposure, update races, persistent scratch state and billing abuse~\cite{marin}. Their article is a review: its architectural and execution-environment comparison tables are qualitative, and it does not supply a single proposed algorithm or numerical benchmark to reproduce.
+
+Implementing individual recommendations does not by itself resolve their operational interactions. Waiting for evidence can delay or prevent application progress. A successful deletion can be followed by a failed audit write. A quota may reduce attack work while rejecting valid work. Removing trace labels may conceal a workflow path while timing still reveals its role. These examples motivate studying both security admission and legitimate completion under declared trust and observer models.
+
+We investigate the following questions:
+\begin{enumerate}[label=RQ\arabic*.]
+\item How do local countermeasures change the acceptance of explicit schema, integrity, authorization, persistence and stale-access violations?
+\item How do acknowledged evidence, independent deletion approval and bounded deployment checks behave when composed, individually removed or subjected to dependency failure?
+\item What tradeoffs remain in workflow information exposure and billing protection under held-out inference and prespecified threshold/quota variations?
+\end{enumerate}
+
+The contributions are (i) an executable local document workflow and reusable reference components that operationalize selected recommendations; (ii) paired component experiments, integrated ablations and failure cases with retained observations; and (iii) a reproducible evaluation that reports residual leakage, evasive workloads and legitimate-request loss. The mechanisms are established engineering techniques. We do not claim that their combination is the first security framework for serverless systems, or that results from this local model predict cloud deployment performance.
+
+\section{Background and Related Work}
+Marin et al.\ organize serverless threats at application and infrastructure levels~\cite{marin}. Their recommendations motivate our event validation, integrity checks, minimum permissions and scratch monitoring. Their discussions of workflow paths, update races and billing motivate experiments requiring explicit choices of observer, synchronization and anomaly detector. HMAC envelopes, the specific EWMA, deadline padding and the purge-grant protocol in SSRSF are our implementations, not algorithms attributed to that review.
+
+Hong et al.\ describe six patterns for using serverless functions to build security services~\cite{hong}. Wang et al.\ measure actual commercial platforms, including execution-environment reuse, placement and resource behavior~\cite{wang}. Trapeze uses dynamic information-flow control to enforce a stronger information-flow property~\cite{trapeze}. Kalium uses local and global application state to enforce serverless control-flow integrity~\cite{kalium}. DoWTS provides synthetic Denial-of-Wallet attack simulation~\cite{dowts}. NIST guidance treats application, infrastructure, policy and observability code as parts of a DevSecOps workflow~\cite{nist}. Table~\ref{tab:related} positions our artifact relative to these sources. This targeted comparison is not a systematic literature review.
+
+\begin{table}[htbp]
+\centering\small
+\begin{tabularx}{\linewidth}{@{}lYY@{}}
+\toprule
+Work & Principal focus & Relationship to SSRSF \\
+\midrule
+Marin et al.~\cite{marin} & Threat review and research directions & Source taxonomy; no numerical reproduction target \\
+Hong et al.~\cite{hong} & Serverless security-service patterns & Broader design context; no performance comparison claimed \\
+Wang et al.~\cite{wang} & Real provider measurement & Highlights the infrastructure evidence our local model lacks \\
+Trapeze~\cite{trapeze} & Dynamic information-flow enforcement & Stronger formal goal; not replicated by a telemetry facade \\
+Kalium~\cite{kalium} & Control-flow integrity & Protects workflow ordering; our grant and policy checks do not substitute for CFI \\
+DoWTS~\cite{dowts} & Synthetic billing-attack simulation & Related experimental motivation; our five traces are independently constructed \\
+SSRSF & Local control composition and failure semantics & Paired fixtures, audit/deletion boundaries, ablations and sensitivity evidence \\
+\bottomrule
+\end{tabularx}
+\caption{Positioning against primary sources. Related systems were not reimplemented or benchmarked, so this table establishes scope rather than comparative superiority.}\label{tab:related}
+\end{table}
+
+\section{Scope, Adversary and Trust Model}\label{sec:threat}
+The artifact runs offline on one host using the Python standard library. It does not create cloud resources. The reference workload accepts bounded text, normalizes whitespace and labels documents using a deterministic word-count rule. It neither parses arbitrary PDFs nor calls an inference service. The original document workflow motivates the function boundaries; local SQLite stores replace the object store, queue-backed persistence and document metadata services. Event handoffs are synchronous local calls, so queue delivery and retry semantics are not evaluated.
+
+The fixture adversary can modify selected event fields, provide missing or forged credentials, request actions outside a declared scope, alter a disposable parser artifact, write an inert workspace marker, select a deliberately stale replica, attempt invalid or replayed purge grants, request detailed telemetry and influence invocation counts. The harness can interrupt the audit and approval paths to test dependency failures. No exploit payload, arbitrary malicious code, network attack or real document deletion is executed.
+
+The Python reference monitor, approval authority, audit collector, cryptographic keys, trusted inventory, experiment labels and local filesystem owner are trusted. The application attacker does not have arbitrary access to Python objects or SQLite files. These are logical service boundaries, not independent OS identities. A malicious local owner can change code, keys, records and results. HMACs do not prevent a key holder from forging records; source hashes do not establish provenance against the artifact owner.
+
+The external side-channel observer sees exported trace names and total response latency. A separate administrator can read detailed audit records. Hiding the external trace does not hide internal telemetry from administrators. Provider scheduling, cross-tenant co-location, CPU/cache channels, container or hypervisor escape, distributed policy propagation and actual provider charges are outside the model.
+
+\section{Reference Architecture and Implementation}\label{sec:implementation}
+The package separates input and capability controls, process lifecycle experiments, a local audit collector, an approval authority and deletion broker, an exact-policy deployment gate, an integrated document workflow, and evaluation/evidence writing. The local workflow performs the following operations:
+\begin{enumerate}
+\item Ingest authenticates a fixture credential and counts offered demand against the current invocation budget.
+\item An internal envelope carries the bounded text and resource identifier to extraction. The consumer verifies its MAC and schema and checks the trusted parser-artifact inventory.
+\item Extraction runs through the active function policy and, when enabled, the acknowledged entry/exit evidence wrapper. Classification and storage produce a fresh document version.
+\item Owner-checked reads and administrator-only aggregate reports expose application results. Restricted telemetry exposes a public facade or authorized detailed records.
+\item An administrator obtains an independently issued exact-version grant; the broker validates and consumes it before deletion.
+\end{enumerate}
+The fixed resource \texttt{public/item} keeps the integrated policy domain bounded. Multiple-resource authorization and partial multi-service deletion are not modeled by the integrated workflow.
+
+\subsection{Input, Identity and Dependency Controls}
+Events have exactly three fields: an allowed action, a resource matching \verb|public/[a-z0-9_-]{1,40}|, and a string value of at most 128 characters. The implementation uses the precise regular expression recorded in the source; the action is restricted to read in these extraction fixtures. Canonical JSON is authenticated with HMAC-SHA-256 and compared using a constant-time MAC comparison routine. Valid metacharacters remain data. The MAC establishes shared-key integrity, not public-key origin verification or replay prevention. The wrapper's invocation identifier prevents reexecuting an already admitted evidence invocation; it is not an exactly-once queue protocol.
+
+The component authorization experiment checks exact action/resource grants at every function boundary. The integrated workflow additionally checks gateway credentials, ownership for reads, the extraction policy and administrative authority for reporting and deletion. Fixture credentials are intentionally visible test inputs, not a production credential service. Dependency verification compares a trusted mapping of relative paths to SHA-256 hashes. Changed bytes, additions, removals and symlinks are rejected. This does not detect vulnerabilities in originally approved code, keep packages up to date, implement a full software bill of materials or solve concurrent verify/use races.
+
+\subsection{Workspace Lifecycle and Acknowledged Evidence}\label{sec:audit}
+The lifecycle experiment runs real Python subprocesses in temporary roots. Warm variants reuse one worker; a fresh variant starts a second worker and workspace. Monitoring removes files except one declared cache with known bounded contents. The implant is an inert marker. Observed post-write size checks do not impose an OS storage quota or prevent transient exhaustion.
+
+The integrated evidence wrapper serves a different purpose: it records state rather than treating every difference as malicious. Let $S_{e,i}^{\mathrm{in}}$ and $S_{e,i}^{\mathrm{out}}$ be hashed scratch inventories at entry and exit of invocation $i$ in environment $e$. On the next invocation, the comparison is
+\[
+D_{e,i+1} = \left(S_{e,i+1}^{\mathrm{in}} \ne S_{e,i}^{\mathrm{out}}\right).
+\]
+Comparison with the prior exit permits legitimate changes made during prior work. A new environment is bootstrap state. If the previous acknowledged record is an entry without an exit, the next entry is labeled an evidence gap. A mismatch is a triage signal, not proof of compromise. Serial invocation in each modeled environment is assumed; unmodeled background writers would weaken that interpretation.
+
+The collector stores ordered records in SQLite with \texttt{synchronous=FULL}. Each append has an idempotency key and a MAC over its sequence number, previous digest, event identifier and canonical payload:
+\[
+h_i = \operatorname{HMAC}_K\!\left(\operatorname{canon}(i,h_{i-1},\mathrm{id}_i,E_i)\right).
+\]
+The receipt is returned after commit. Duplicate delivery of the same identifier and payload returns the original receipt; a conflicting payload is rejected. Reads require the investigator API role. The API exposes no record mutation or deletion. Committed records remain retrievable after reopening the collector, as checked in the test suite. SQLite acknowledgement is a local persistence contract, not cloud WORM retention or a power-loss test of the storage device. A valid prefix cannot reveal tail truncation without an independently retained receipt.
+
+The execution sequence is: capture entry; await entry commit; execute application work; capture exit; await exit commit. Entry failure prevents application work. Exit failure can follow committed application side effects and must not be reported as rollback. A subsequent call records the gap. Previously admitted invocation IDs are rejected rather than reexecuted; the caller must reconcile state. Application exceptions attempt a failed-exit record, and audit unavailability can itself prevent that record.
+
+\subsection{Independent Deletion Approval}\label{sec:purge}
+The approval authority authenticates the requester independently of application parameters. Only the administrator fixture role can obtain a purge grant. Grants bind the requester, action, exact target document IDs and versions, operation ID, random nonce and expiry. A broker rejects substitution, scope mismatch, expiry and replay. The application receives the grant, not the broker's authority to delete arbitrary records.
+
+Admission evidence must be acknowledged before the broker starts destructive work. After obtaining a SQLite write lock, the broker revalidates authorization and expiry, checks that all requested versions still exist, consumes the nonce and deletes all targets in one transaction. Concurrent repeats can commit at most once. Any target mismatch rolls back the entire local transaction. A replaced document cannot be deleted using an old version grant. The wrapper also rejects a caller that substitutes new target parameters while retaining the old grant.
+
+After commit, the broker emits an exit record. If this emission fails, deletion remains committed. A reconciliation query checks the durable nonce/operation record without repeating deletion. The current query requires a still-valid grant; recovery after expiry requires a separately authorized investigator interface and remains future work. Local transactional atomicity does not carry over to deletion spanning buckets, databases and external APIs, where partial outcomes would require a more elaborate reconciliation protocol.
+
+\subsection{Bounded Policy-Change Gate}\label{sec:policy}
+The policy language contains exact principal/action/resource tuples with allow or deny effects. Explicit deny overrides allow and unmatched requests are denied. No wildcard, condition, cross-account, session, resource-policy or organizational-policy semantics are implemented. This is deliberately not an AWS IAM evaluator.
+
+For a nonempty declared catalogue $\mathcal{C}$, the gate computes old and candidate decisions for each $q\in\mathcal{C}$. A new allow,
+\[
+\exists q\in\mathcal{C}:\quad P_{\mathrm{old}}(q)=\mathrm{deny}\ \land\ P_{\mathrm{new}}(q)=\mathrm{allow},
+\]
+halts automatic deployment with a review-required finding. Unsupported syntax or any rule outside the catalogue is unresolved and also blocks installation. The gate records the decision matrix, candidate hash and prior version before replacement. Audit failure prevents replacement. A dispatch lock spans admitted work and local policy replacement, so cutover drains admitted requests. Supported contractions may install automatically; review-required expansions are not automatically approved by this implementation. The gate does not determine whether an expansion is desirable or prove equivalence outside the declared domain.
+
+\subsection{Telemetry and Invocation Budgets}
+The workflow returns fixed public service metadata. Detailed traces and audit records require an administrator. The separate information-exposure experiment models two role-dependent branches and compares exposed names with a common facade. It evaluates a relative-sleep response floor and an absolute-deadline variant with up to 2 ms of final busy waiting. Padding is measured separately from the integrated SQLite workflow and is not claimed to normalize its end-to-end timing.
+
+The local invocation budget counts all offered calls, including those rejected by a quota, and evaluates a closed bucket before applying its next quota. The billing study uses the same boundary convention with a small deterministic dispatch workload. It does not charge the full document workflow as cloud compute. A rate alert alone never rejects requests; a quota can reject legitimate requests because it does not identify malicious callers.
+
+\subsection{Local Safety Properties}
+The implementation is designed around three bounded safety properties. These are reasoning claims about the trusted local transition model, not machine-checked proofs or guarantees against arbitrary interpreter compromise.
+\begin{enumerate}
+\item \textbf{Evidence admission.} With audit enabled, extraction cannot begin before its entry append returns a committed receipt. This follows from the wrapper's sequential call order; an append exception bypasses the application callback. It says nothing about the truth of a compromised emitter or the durability of an unacknowledged write.
+\item \textbf{At-most-once purge commit.} For a given nonce or operation ID, at most one local deletion transaction can commit. The write transaction serializes contenders, and uniqueness constraints reject a second consume. Target validation, consume and deletion share that transaction, so a stale target cannot partially consume authority or delete the other targets. Exit logging is outside this transaction and can fail independently.
+\item \textbf{No automatic covered expansion.} A successful automatic policy replacement cannot change any catalogue decision from deny to allow. The gate enumerates the complete declared catalogue before replacement and refuses such a transition. Unsupported syntax or out-of-catalogue rules also refuse replacement. This property is limited to the exact local policy language and catalogue; it is not a claim about effective cloud permissions.
+\end{enumerate}
+These properties motivate the adversarial and fault checks rather than replacing empirical measurements of latency, information exposure or workload admission.
+
+\section{Experimental Method}\label{sec:method}
+\subsection{Run, Baselines and Measurements}
+The retained evidence was produced at \RunUTC{} using Python \RunPython{} on \RunPlatform{}. Each case uses \TrialCount{} trials, seed \SeedValue{} and stable experiment-specific seed offsets. The primary timing floor is 8 ms; modeled unit cost is $10^{-6}$ arbitrary units per admitted call. No provider pricing is used. Case and variant order are randomized where applicable, while workloads are paired across variants. Total recorded observations across the nine groups are \ObservationCount{}; this is an artifact size, not the number of independent real-world attacks.
+
+The seven original component groups are events, authorization, dependencies, persistence, side channels, rollouts and billing. The eighth group composes the workflow and evaluates ablations/faults. The ninth performs detector/quota sensitivity analysis. Raw observations retain trial/case/variant labels, source hashes, machine metadata, latency and relevant outcome records. The report includes descriptive Wilson intervals and interpolated latency quantiles. Repeated fixtures and correlated bucket observations do not support population-level effectiveness estimates, so we do not use significance tests to turn repeated deterministic outcomes into a general security claim.
+
+Permissive baselines intentionally omit the control under study. They establish that a fixture can exercise the intended admission path; they are not state-of-the-art competing defenses. Attack acceptance measures differ by experiment: for events it is schema/integrity admission, for persistence it is marker survival, and for rollouts it is post-cutover stale authority. Valid string metacharacters do not count as attacks. Legitimate completion is reported separately.
+
+\subsection{Integrated Scenarios and Ablations}
+The integrated group has ten cases. Seven adversarial cases attempt an unsigned event, parser-artifact change, unapproved purge, replayed grant, replaced target scope, policy expansion or private telemetry read. Two cases interrupt audit acknowledgement at entry or exit. The final case performs legitimate ingest and authorized deletion. Each adversarial/fault case compares an unprotected workflow, all five configurable controls, and one ablation removing only the implicated control. Legitimate-workflow compares the baseline and full variants. This yields 29 scenario/variant combinations per trial.
+
+The replaced-target integration case sends a new target version with an old grant; it measures mismatched-request acceptance. A separate broker test keeps the old grant scope intact while replacing the stored document, testing the broker's version check. Replay success denotes repeated operation acceptance, even if a document has already been removed. The audit cases record completion, document existence before recovery and the next entry's gap status; they are not attack-success observations. Total trial latency includes constructing the app and SQLite stores as well as scenario work. Initialization time is retained, but no isolated control overhead is inferred from these totals.
+
+\subsection{Held-Out Role Inference}
+User and administrator branches sleep for constructed 1 ms and 3 ms service delays. Actual wall-clock response and process CPU times are measured. Independently shuffled training and test schedules are balanced by role and variant, with \TrialCount{} calls per role in each split. A trace classifier learns the majority role associated with each training trace. A timing classifier fits a threshold halfway between training role medians and freezes its direction before test scoring. Test labels are never used to fit or retune it. Balanced chance accuracy is 50\%. This single classifier is not an optimal timing attacker.
+
+\subsection{Billing Workloads and Sensitivity}
+Each trial contains 70 synthetic one-minute buckets, advanced without waiting. Legitimate baseline demand is uniformly 8--12 calls per bucket. The first 20 buckets are training and excluded from confusion-matrix scoring; ordinary non-anomalous learning continues afterward. A legitimate burst adds 80 calls in buckets 30--35. A sustained attack adds 80 malicious calls per bucket in 30--54. Low-rate attack adds two in each of those buckets. Slow ramp adds one through nine, increasing every three buckets. Arrival order is shuffled and shared across control variants. Labels are hidden from the controller.
+
+For offered count $x_t$, the detector flags a candidate when
+\[
+x_t>\mu_{t-1}+d\max(1,\sqrt{v_{t-1}}).
+\]
+Non-candidates update the EWMA with $\alpha=0.2$; candidates freeze learning. Three consecutive candidates confirm an alert. The primary $d$ is four. Adaptive quotas apply in the next bucket and cap admission at 20; fixed quotas always use that cap. Alert delay includes the confirmation bucket, while enforcement starts only after it closes. Missing alerts retain a null delay rather than zero. Mean delay is conditional on trials with an alert and must be interpreted with detection recall.
+
+The sensitivity group reports all nine prespecified combinations $d\in\{2,4,6\}$ and quota $q\in\{10,20,40\}$ across the five workload families. Each trial uses a distinct workload seed, \texttt{experiment\_seed + 1009*trial}, paired across settings. Parameter order is randomized; no best setting is selected using these results. Per-trial seed, confusion counts, dispatch count/checksum and modeled spend are retained. Full bucket traces are retained for the primary billing experiment. Cost excludes duration, retries, downstream services and network traffic.
+
+% BEGIN EVIDENCE RESULTS
+\section{Results}\label{sec:results}
+
+
+
+All values in this section are generated from the retained evidence, not transcribed from the source review. Counts describe the labeled fixtures and comparison variants defined in Section~\ref{sec:method}.
+
+
+
+\subsection{Component Admission and Lifecycle Outcomes}
+
+\begin{table}[htbp]
+\centering\small
+\begin{tabularx}{\linewidth}{@{}Yrrr@{}}
+\toprule
+Experiment & Baseline attack & Protected attack & Valid completion \\
+\midrule
+Events & 150/150 & 0/150 & 60/60 \\
+Authorization & 120/120 & 0/120 & 90/90 \\
+Artifact integrity & 60/60 & 0/60 & 30/30 \\
+Warm monitoring & 30/30 & 0/30 & 30/30 \\
+Fresh workspace & 30/30 & 0/30 & 30/30 \\
+Synchronized cutover & 60/60 & 0/60 & 60/60 \\
+\bottomrule
+\end{tabularx}
+\caption{Component outcomes: event/authorization admission, changed-artifact admission, marker survival or stale-access success. The two persistence rows share the same warm baseline. Valid completion is measured separately; it does not estimate production uptime.}\label{tab:components}
+\end{table}
+
+
+Median persistence lifecycle times were 19.396 ms (warm unchecked), 19.975 ms (warm monitored) and 38.140 ms (fresh). The fresh variant starts a second process. Median rollout trial durations were 0.494 ms for the stale baseline and 3.334 ms for synchronized cutover. These boundaries include lifecycle work, thread setup or forced coordination; they are not cloud cold-start times or isolated synchronization overhead.
+
+
+\subsection{Integrated Ablations and Dependency Failures}
+
+\begin{table}[htbp]
+\centering\footnotesize
+\begin{tabularx}{\linewidth}{@{}Yrrrl@{}}
+\toprule
+Attempt & No controls & Full & Ablation & Removed \\
+\midrule
+unsigned-event & 30/30 & 0/30 & 30/30 & integrity \\
+artifact-change & 30/30 & 0/30 & 30/30 & integrity \\
+unapproved-purge & 30/30 & 0/30 & 30/30 & broker \\
+replayed-grant & 30/30 & 0/30 & 30/30 & broker \\
+replaced-target & 30/30 & 0/30 & 30/30 & broker \\
+policy-expansion & 30/30 & 0/30 & 30/30 & gate \\
+private-telemetry & 30/30 & 0/30 & 30/30 & telemetry \\
+\bottomrule
+\end{tabularx}
+\caption{Attempted adversarial operation acceptance. Each ablation removes only the named control. Replay counts acceptance, not repeated physical deletion; replaced-target counts a new target parameter paired with an old grant.}\label{tab:ablations}
+\end{table}
+
+
+\begin{table}[htbp]
+\centering\footnotesize
+\begin{tabularx}{\linewidth}{@{}Ylrrrr@{}}
+\toprule
+Case & Variant & Complete & Doc exists & Gap & p50 ms \\
+\midrule
+audit-entry-outage & unprotected & 30/30 & 30/30 & 0/30 & 2.105 \\
+audit-entry-outage & full & 0/30 & 0/30 & 0/30 & 1.827 \\
+audit-entry-outage & without-audit & 30/30 & 30/30 & 0/30 & 2.265 \\
+audit-exit-outage & unprotected & 30/30 & 30/30 & 0/30 & 2.726 \\
+audit-exit-outage & full & 0/30 & 30/30 & 30/30 & 4.715 \\
+audit-exit-outage & without-audit & 30/30 & 30/30 & 0/30 & 2.999 \\
+legitimate-workflow & unprotected & 30/30 & 0/30 & 0/30 & 2.569 \\
+legitimate-workflow & full & 30/30 & 0/30 & 0/30 & 4.537 \\
+\bottomrule
+\end{tabularx}
+\caption{Fault and legitimate workflow outcomes. Document existence is sampled before recovery; gap status is sampled on recovery. Legitimate completion includes authorized deletion, so no document remains. Total latency includes initialization and recovery where applicable.}\label{tab:faults}
+\end{table}
+
+
+Entry acknowledgement failure prevents document creation in the full variant. Exit failure follows committed creation; after service recovery the next invocation records an evidence gap. Removing audit admission restores completion under both injected failures but provides no gap record. These differences expose an availability/evidence tradeoff rather than an attack-detection rate.
+
+
+\subsection{Held-Out Information Exposure}
+
+\begin{table}[htbp]
+\centering\footnotesize
+\begin{tabularx}{\linewidth}{@{}Yrrrrr@{}}
+\toprule
+Variant & Trace & Timing & Timing CI (\%) & p50 ms & CPU ms \\
+\midrule
+exposed & 60/60 & 60/60 & 94.0--100.0 & 2.510 & 0.023 \\
+facade-floor & 30/60 & 53/60 & 77.8--94.2 & 9.781 & 0.045 \\
+facade-deadline & 30/60 & 55/60 & 81.9--96.4 & 8.001 & 0.710 \\
+\bottomrule
+\end{tabularx}
+\caption{Correct held-out role predictions, descriptive 95\% Wilson intervals for timing accuracy, response median and mean process CPU time. Each split is balanced by role; chance accuracy is 50\%. Intervals do not establish independence or prove zero leakage.}\label{tab:leakage}
+\end{table}
+
+
+Simple-floor timing accuracy was 88.3\%, versus 91.7\% for deadline padding in this run. The facade removes role separation for the tested trace classifier, but floor timing remains informative. Deadline padding incurs additional CPU work and provides no constant-time guarantee. These observations are host- and attacker-dependent.
+
+
+\subsection{Billing Control Outcomes}
+
+\begin{table}[htbp]
+\centering\footnotesize
+\begin{tabularx}{\linewidth}{@{}Ylrrrrr@{}}
+\toprule
+Workload & Control & Attack calls & Valid drops & Cost units & Recall & FPR \\
+\midrule
+Steady & None & 0.0 & 0.0 & 0.000702 & n/a & 0.0\% \\
+Steady & Alert & 0.0 & 0.0 & 0.000702 & n/a & 0.0\% \\
+Steady & Adaptive & 0.0 & 0.0 & 0.000702 & n/a & 0.0\% \\
+Steady & Fixed & 0.0 & 0.0 & 0.000702 & n/a & 0.0\% \\
+Valid burst & None & 0.0 & 0.0 & 0.001179 & n/a & 0.0\% \\
+Valid burst & Alert & 0.0 & 0.0 & 0.001179 & n/a & 8.0\% \\
+Valid burst & Adaptive & 0.0 & 210.3 & 0.000969 & n/a & 8.0\% \\
+Valid burst & Fixed & 0.0 & 420.3 & 0.000759 & n/a & 0.0\% \\
+Sustained & None & 2000.0 & 0.0 & 0.002702 & 0.0\% & 0.0\% \\
+Sustained & Alert & 2000.0 & 0.0 & 0.002702 & 92.0\% & 0.0\% \\
+Sustained & Adaptive & 628.7 & 169.9 & 0.001161 & 92.0\% & 0.0\% \\
+Sustained & Fixed & 441.1 & 192.0 & 0.000951 & 0.0\% & 0.0\% \\
+Low rate & None & 50.0 & 0.0 & 0.000750 & 0.0\% & 0.0\% \\
+Low rate & Alert & 50.0 & 0.0 & 0.000750 & 0.0\% & 0.0\% \\
+Low rate & Adaptive & 50.0 & 0.0 & 0.000750 & 0.0\% & 0.0\% \\
+Low rate & Fixed & 50.0 & 0.0 & 0.000750 & 0.0\% & 0.0\% \\
+Ramp & None & 117.0 & 0.0 & 0.000819 & 0.0\% & 0.0\% \\
+Ramp & Alert & 117.0 & 0.0 & 0.000819 & 0.4\% & 0.0\% \\
+Ramp & Adaptive & 117.0 & 0.0 & 0.000819 & 0.4\% & 0.0\% \\
+Ramp & Fixed & 116.9 & 0.1 & 0.000819 & 0.0\% & 0.0\% \\
+\bottomrule
+\end{tabularx}
+\caption{Mean admitted attack calls, rejected legitimate calls and modeled total spend per trial. Recall and FPR use post-training bucket counts. No detector is present in None/Fixed variants; zero recall there is not a detector evaluation. Alert-only does not reduce spend.}\label{tab:billing}
+\end{table}
+
+
+Sustained attack confirmation occurred in 30/30 trials, with conditional mean alert delay 3.00 synthetic minutes. Quotas apply in the following bucket. Slow-ramp alerts occurred in only 1/30 trials. Low-rate misses and legitimate-burst rejections remain in the evidence. Cost reductions therefore cannot be interpreted as accurate identification of malicious requests.
+
+
+\subsection{Prespecified Threshold/Quota Sensitivity}
+
+\begin{table}[htbp]
+\centering\footnotesize
+\begin{tabularx}{\linewidth}{@{}llYrrrr@{}}
+\toprule
+$d$ & $q$ & Sust. attack & Sust. drops & Burst drops & Low recall & Ramp recall \\
+\midrule
+2 & 10 & 404.4 & 201.0 & 276.7 & 12.8\% & 62.4\% \\
+2 & 20 & 605.2 & 176.7 & 240.6 & 12.8\% & 62.4\% \\
+2 & 40 & 1005.2 & 128.0 & 172.0 & 12.8\% & 62.4\% \\
+4 & 10 & 435.3 & 196.7 & 240.9 & 0.0\% & 0.0\% \\
+4 & 20 & 632.2 & 173.4 & 210.3 & 0.0\% & 0.0\% \\
+4 & 40 & 1024.5 & 125.7 & 150.3 & 0.0\% & 0.0\% \\
+6 & 10 & 435.3 & 196.7 & 240.9 & 0.0\% & 0.0\% \\
+6 & 20 & 632.2 & 173.4 & 210.3 & 0.0\% & 0.0\% \\
+6 & 40 & 1024.5 & 125.7 & 150.3 & 0.0\% & 0.0\% \\
+\bottomrule
+\end{tabularx}
+\caption{All nine prespecified settings over paired independent workload seeds. Call columns are per-trial means; recalls are pooled post-training bucket proportions. The full evidence also retains steady traffic, costs, false alerts, delays and dispatch checksums. The sweep is descriptive and is not used to select a best setting.}\label{tab:sensitivity}
+\end{table}
+
+
+Changing the quota changes admitted work and legitimate rejection after an alert; changing the threshold changes which buckets trigger it. The sweep varies only two parameters within fixed workload families. It does not cover baseline seasonality, delayed telemetry, distributed enforcement or an adaptive attacker.
+% END EVIDENCE RESULTS
+
+\section{Discussion}
+\subsection{What the Evidence Supports}
+The component results answer RQ1 within the declared fixture corpus: protected paths reject the tested admission violations, and monitored/fresh workspaces prevent marker survival. Deliberately forced stale windows demonstrate a local consistency failure that synchronized cutover avoids. These outcomes validate reference behavior, not the absence of unknown vulnerabilities.
+
+The integrated ablations answer RQ2 by tying admission changes to particular controls. Audit admission, independent approval, policy review and telemetry access perform different tasks. Entry failure preserves the pre-work state, whereas exit failure can leave application work committed. Treating both failures as an undifferentiated request error would hide this distinction. An independently verifiable receipt or a committed operation record provides a basis for reconciliation, subject to the collector and authority trust assumptions.
+
+RQ3 exposes limits of observation and volume-based control. Hiding trace names controls one observer interface, while response-time distributions may retain role dependence. Busy waiting changes timing behavior at a measurable CPU cost; the retained run does not demonstrate effective concealment for the evaluated classifier. Similarly, offered-count anomalies cannot distinguish a legitimate burst from an attack burst of equal volume. Quota reductions in accepted malicious work must therefore be read alongside legitimate drops and low-rate misses. The sensitivity sweep reports how those outcomes change, without claiming a universally suitable setting.
+
+\subsection{Relation to the Source Review}
+The artifact provides executable local counterparts for event validation, integrity protection, function-specific permissions, dependency tracking, scratch monitoring, workflow-observation experiments, update consistency and billing controls. It also adds project-specific audit, grant and deployment mechanisms to study operational failure boundaries. The source review does not define these mechanisms or numerical targets. Its platform isolation comparisons and scheduler questions remain unanswered by this local implementation.
+
+\subsection{Operational Implications}
+Audit acknowledgement makes a dependency part of admission policy. Teams need a documented decision about fail-closed behavior and a recovery path for operations committed before exit logging fails. Purge authorization should bind resource versions and request identity, rather than relying on a caller's claim of prior approval. Policy-change checks should expose unresolved cases instead of treating unsupported syntax as a safe result. Cost containment needs explicit treatment of rejected legitimate work. These are design implications from local evidence; cloud adoption requires validation against actual platform semantics.
+
+\section{Threats to Validity and Limitations}
+\textbf{Construct validity.} Controlled acceptance is not successful arbitrary code execution. Marker persistence is not malware persistence. File hashes detect changes rather than dependency vulnerabilities. The parser and classifier are small deterministic functions. Synthetic spend is not actual expenditure. Billing accuracy is bucket-level attack presence, not malicious-request classification.
+
+\textbf{Internal validity.} Randomized order and paired inputs reduce ordering and workload differences, but all timing observations share one host and can be affected by scheduling and concurrent activity. Initialization, SQLite commits and deliberate synchronization are part of some trial durations. Repeated deterministic cases and correlated buckets violate interpretations that assume independent representative attack samples. No isolated causal latency overhead or statistical superiority is claimed.
+
+\textbf{Observer and adversary coverage.} The timing attacker uses one fixed threshold learned from training calls. It does not cover adaptive inference, aggregation over many sessions, arbitrary service delays or hostile internal telemetry. The code does not implement termination-sensitive noninterference or control-flow integrity comparable to Trapeze or Kalium. A compromised interpreter can bypass all Python reference checks.
+
+\textbf{Storage and recovery.} SQLite FULL commits depend on host filesystem and hardware behavior; no power-loss fault experiment was performed. The collector has API-level append restrictions, not owner-resistant retention. Hash-chain truncation requires an external anchor to detect. Keys are fixture-owned process state. The workflow is initialized in disposable roots, and full-service restart/key management is not modeled. Approval reconciliation after grant expiry and cloud multi-service partial deletion remain future work.
+
+\textbf{External validity.} There is no cloud deployment, distributed gate, provider IAM evaluator, realistic queue delivery, cross-tenant placement experiment, OS quota enforcement or container/hypervisor isolation comparison. Actual uptime SLOs, error budgets, incident recovery and production attack prevalence have not been measured. A successful local study cannot establish full implementation of every research direction in a security review.
+
+\textbf{Research positioning.} The related-work comparison establishes relevant neighboring efforts, not exhaustive novelty or publication readiness. Existing defenses were not benchmarked, and the basic primitives are established. The paper's contribution is the reference artifact and bounded empirical observations. Broader novelty, external validation and suitability for a particular venue require further assessment.
+
+\section{Reproducibility and Artifact Availability}\label{sec:artifact}
+The repository contains \texttt{src/ssrsf/}, \texttt{tests/}, the source mapping in \texttt{research/}, the retained \texttt{results/} bundle and this single-file manuscript. The supplied review's SHA-256 fingerprint is recorded in \texttt{research/article.json}. Raw evidence, aggregate CSV, a Markdown report and \texttt{SHA256SUMS} are retained together. Source hashes bind the run to implementation, tests and research metadata at generation time; they are integrity metadata rather than an independent timestamp or provenance service. No public archive DOI or repository URL is claimed here.
+
+Python 3.11 or later is required; runtime and tests use only the standard library. From the repository root:
+\begin{quote}\small\ttfamily
+PYTHONPATH=src python3 -m unittest discover -s tests -v\\
+PYTHONPATH=src python3 -m ssrsf evaluate \textbackslash{}\\
+\hspace*{1em}--trials 30 --seed 42 --output results-new
+\end{quote}
+A new directory preserves the retained run. Repeating deterministic outcomes should preserve their fixture behavior; timing and held-out timing accuracy may change. The \texttt{--experiment} option selects groups, including \texttt{framework} and \texttt{sensitivity}. The manuscript tables are generated inline from the retained JSON by \texttt{scripts/paper\_evidence.py}; its \texttt{--check} mode detects evidence drift without compiling LaTeX. Static label, citation and environment checks are separate from Overleaf layout verification.
+
+The automated suite contains \TestCount{} tests covering input and exact grants, artifact mutation, workspace cleanup, train/test separation, stale and in-flight access, audit reopening and anchored integrity, concurrent purge replay, version mismatch, dependency outages, policy scope, telemetry access, ablation behavior, pairing and accounting. All were executed successfully for this revision. An experiment outcome and a passing invariant test provide different kinds of evidence and are not pooled into an accuracy claim.
+
+\section{Conclusion}
+SSRSF turns selected serverless security recommendations into a local reference implementation and an explicitly bounded experimental study. The artifact connects authenticated inputs, exact authority, durable local evidence, independently approved deletion and policy-change checks while retaining separate lifecycle, information-exposure and billing experiments. Full controls prevent the tested workflow admissions, but fault tests reveal committed-work/evidence gaps, and timing and billing studies retain important residual failures. The result is a reproducible basis for investigating security--reliability tradeoffs. It does not reproduce numerical results from the review or validate provider security; the next steps are realistic deployment studies, broader adversarial workloads and comparisons with relevant implemented defenses.
+
+\begin{thebibliography}{9}
+\bibitem{marin} E. Marin, D. Perino and R. Di Pietro. Serverless computing: a security perspective. \emph{Journal of Cloud Computing}, 11, 69, 2022. \url{https://doi.org/10.1186/s13677-022-00347-w}.
+\bibitem{hong} S. Hong, A. Srivastava, W. Shambrook and T. Dumitra\c{s}. Go Serverless: Securing Cloud via Serverless Design Patterns. \emph{USENIX HotCloud}, 2018. \url{https://www.usenix.org/conference/hotcloud18/presentation/hong}.
+\bibitem{wang} L. Wang, M. Li, Y. Zhang, T. Ristenpart and M. Swift. Peeking Behind the Curtains of Serverless Platforms. \emph{USENIX ATC}, pp. 133--146, 2018. \url{https://www.usenix.org/conference/atc18/presentation/wang-liang}.
+\bibitem{trapeze} K. Alpernas, C. Flanagan, S. Fouladi, L. Ryzhyk, M. Sagiv, T. Schmitz and K. Winstein. Secure Serverless Computing using Dynamic Information Flow Control. \emph{Proceedings of the ACM on Programming Languages}, 2(OOPSLA), article 118, 2018. \url{https://doi.org/10.1145/3276488}.
+\bibitem{kalium} D. S. Jegan, L. Wang, S. Bhagat and M. Swift. Guarding Serverless Applications with Kalium. \emph{USENIX Security}, pp. 4087--4104, 2023. \url{https://www.usenix.org/conference/usenixsecurity23/presentation/jegan}.
+\bibitem{dowts} D. Kelly, F. G. Glavin and E. Barrett. DoWTS---Denial-of-Wallet Test Simulator: Synthetic data generation for preemptive defence. \emph{Journal of Intelligent Information Systems}, 60(2), pp. 325--348, 2023. \url{https://doi.org/10.1007/s10844-022-00735-3}.
+\bibitem{nist} R. Chandramouli. Implementation of DevSecOps for a Microservices-based Application with Service Mesh. NIST SP 800-204C, 2022. \url{https://doi.org/10.6028/NIST.SP.800-204C}.
+\end{thebibliography}
+\end{document}

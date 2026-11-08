@@ -4,7 +4,7 @@
 
 The article is a security review. It does not propose the SRSF implementation or provide numerical experimental results to reproduce. This repository turns its recommendations and research questions into executable local experiments, compares vulnerable baselines with mitigations, and reports newly measured results. The article's qualitative Tables 1 and 2 are contextual comparisons, not benchmark targets.
 
-The reliability scope of this version is legitimate-request completion under controls, local rollout consistency and execution-lifecycle latency. Production uptime SLOs, error budgets and incident recovery have not been evaluated. The research manuscript is [main.tex](main.tex).
+The project includes an integrated local text-document workflow with acknowledged SQLite audit, exact-policy deployment checks, independent purge approval/replay protection, controlled telemetry access and an invocation budget. The reliability scope is legitimate-request completion under controls, local rollout consistency, audit dependency failures and execution-lifecycle latency. Production uptime SLOs, error budgets and incident recovery have not been evaluated. The research manuscript is [main.tex](main.tex).
 
 ## Run everything locally
 
@@ -65,11 +65,41 @@ This is a local research testbed. Workspace/process separation is not a hostile-
 
 Cloud schedulers, co-location, hypervisor/container escape, CPU/cache covert channels, provider billing and the article's platform isolation comparisons require infrastructure outside this local testbed. They are explicitly outside the evidence, rather than assigned synthetic success numbers.
 
-The previous document-processing application, browser console, AWS deployment resources, purge workflow, operational runbooks and their old tests have been removed. Existing ignored `.ssrsf/` data is left untouched and is not used by this version.
+The previous cloud document-processing application, browser console, AWS resources and old operational runbooks are not used. The new `workflow.ReferenceApp` is an offline text-document reference implementation, separate from that application. Existing ignored `.ssrsf/` data is left untouched and is not used by this version.
 
 ## Repository
 
-- `src/ssrsf/`: controls, process runtime, seven experiments, metrics, evidence writer and CLI.
+- `src/ssrsf/`: controls, process runtime, nine experiment groups, metrics, evidence writer and CLI.
 - `tests/`: adversarial control, concurrency, lifecycle, accounting and evidence-integrity tests.
 - `research/`: article identity and methodology/coverage mapping.
 - `results/`: retained measured run, raw observations, CSV, report and checksums.
+
+
+## Integrated workflow and ablations
+
+```bash
+PYTHONPATH=src python3 -m ssrsf evaluate --experiment framework --trials 30 --seed 42 --output results-framework
+PYTHONPATH=src python3 -m ssrsf evaluate --experiment sensitivity --trials 30 --seed 42 --output results-sweep
+```
+
+The framework study compares all controls, no controls, and a single removed control per relevant scenario. It tests signed input, artifact integrity, independent purge approval, replay, replaced versions, policy expansion, private telemetry and audit entry/exit failures. Audit exit failures can leave committed side effects; recovery records an evidence gap. The sensitivity study reports all nine threshold/quota settings over paired workload seeds.
+
+`ReferenceApp` is also usable directly:
+
+```python
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from ssrsf.workflow import ReferenceApp
+
+with TemporaryDirectory() as directory:
+    app = ReferenceApp(Path(directory))
+    document = app.ingest("user-token", "A bounded local text document")
+    targets = [(document["id"], document["version"])]
+    grant = app.approve("admin-token", targets)
+    app.purge("admin-token", targets, grant)
+    assert app.audit.verify()
+```
+
+Tokens above are fixture credentials. SQLite FULL commits, HMAC chains and trusted Python roles implement local semantics; they do not provide cloud retention, independent OS identities or isolation from the filesystem owner. The policy language accepts exact rules only and rejects unsupported scope. Text classification is a deterministic word-count rule, not an inference service. See `research/methodology.md` for failure and recovery semantics.
+
+The manuscript `main.tex` is a single-file research manuscript with inline tables generated from the retained evidence. No LaTeX compilation is required to regenerate those tables. Use `python3 scripts/paper_evidence.py --check` to detect evidence drift, or omit `--check` to refresh the marked evidence block after a new evaluation. Publication novelty and acceptance are not established by passing the software tests.

@@ -29,10 +29,10 @@ def workload(case, rng):
     return buckets
 
 
-def simulate(buckets, variant, unit_price, quota=20):
+def simulate(buckets, variant, unit_price, quota=20, *, deviations=4.):
     if variant not in ("uncontrolled", "alert-only", "adaptive-quota", "fixed-quota"):
         raise ValueError("Unknown control")
-    detector, previous_alert = RateDetector(), False
+    detector, previous_alert = RateDetector(deviations=deviations), False
     records, ledger = [], []
     for minute, arrivals in enumerate(buckets):
         cap = quota if variant == "fixed-quota" or (variant == "adaptive-quota" and previous_alert) else len(arrivals)

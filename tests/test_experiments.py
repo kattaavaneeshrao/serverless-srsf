@@ -8,7 +8,7 @@ from ssrsf.application import authorization, dependencies, events
 from ssrsf.billing import simulate, workload
 from ssrsf.cli import main
 from ssrsf.controls import Rejected
-from ssrsf.evaluation import evaluate, summarize, write_bundle
+from ssrsf.evaluation import EXPERIMENTS, evaluate, summarize, write_bundle
 from ssrsf.infrastructure import persistence, rollouts, side_channels, timing_attack
 from ssrsf.runtime import FunctionProcess
 
@@ -135,7 +135,7 @@ class EvidenceTests(unittest.TestCase):
             root = Path(directory)
             write_bundle(bundle, root)
             loaded = json.loads((root / "results.json").read_text())
-            self.assertEqual(len(loaded["experiments"]), 7)
+            self.assertEqual(len(loaded["experiments"]), len(EXPERIMENTS))
             self.assertIsNone(loaded["paper"]["numerical_reference_results"])
             self.assertTrue(loaded["source_sha256"])
             for line in (root / "SHA256SUMS").read_text().splitlines():
