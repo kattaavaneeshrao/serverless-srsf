@@ -4,7 +4,6 @@ from __future__ import annotations
 import random
 import statistics
 import tempfile
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -52,9 +51,8 @@ def persistence(trials, seed):
             "observations": rows}
 
 
-def _workflow(role: str, variant: str, floor_ms: float):
+def _workflow(role: str):
     start = time.perf_counter_ns()
-    cpu_start = time.process_time_ns()
     trace = ["authenticate"]
     if role == "admin":
         trace.extend(["F2", "F3"])
@@ -62,22 +60,8 @@ def _workflow(role: str, variant: str, floor_ms: float):
     else:
         trace.extend(["F4", "F5"])
         time.sleep(.001)
-    if variant != "exposed":
-        deadline = start + int(floor_ms * 1e6)
-        remaining = (deadline - time.perf_counter_ns()) / 1e9
-        # Separate experimental mitigation: sleep coarsely, then wait on an
-        # absolute monotonic deadline to reduce role-dependent sleep overshoot.
-        # This costs CPU and still has no constant-time/security guarantee.
-        if variant == "facade-deadline":
-            remaining -= .002
-        if remaining > 0:
-            time.sleep(remaining)
-        if variant == "facade-deadline":
-            while time.perf_counter_ns() < deadline:
-                pass
-    elapsed = (time.perf_counter_ns() - start) / 1e6
-    return {"role": role, "trace": trace if variant == "exposed" else ["facade"],
-            "latency_ms": elapsed, "cpu_ms": (time.process_time_ns() - cpu_start) / 1e6}
+    return {"role": role, "trace": trace,
+            "latency_ms": (time.perf_counter_ns() - start) / 1e6}
 
 
 def timing_attack(train: list[dict], test: list[dict]) -> dict:
@@ -92,104 +76,56 @@ def timing_attack(train: list[dict], test: list[dict]) -> dict:
             "held_out_accuracy": proportion(correct, len(test)), "predictions": predictions}
 
 
-def side_channels(trials, seed, floor_ms):
+def side_channels(trials, seed):
     rng, rows = random.Random(seed), []
-    # Roles, variants, and collection order are balanced and randomized in both splits.
     for split in ("train", "test"):
-        schedule = [(trial, role, variant) for trial in range(trials)
-                    for role in ("user", "admin") for variant in ("exposed", "facade-floor", "facade-deadline")]
+        schedule = [(trial, role) for trial in range(trials) for role in ("user", "admin")]
         rng.shuffle(schedule)
-        for trial, role, variant in schedule:
-            rows.append({"trial": trial, "split": split, "variant": variant,
-                         **_workflow(role, variant, floor_ms)})
-    metrics = {}
-    for variant in ("exposed", "facade-floor", "facade-deadline"):
-        train = [r for r in rows if r["variant"] == variant and r["split"] == "train"]
-        test = [r for r in rows if r["variant"] == variant and r["split"] == "test"]
-        # Learn trace -> majority role on training data; ties choose user.
-        mapping = {}
-        for trace in {tuple(r["trace"]) for r in train}:
-            subset = [r for r in train if tuple(r["trace"]) == trace]
-            mapping[trace] = "admin" if sum(r["role"] == "admin" for r in subset) > len(subset) / 2 else "user"
-        correct = sum(mapping.get(tuple(r["trace"]), "user") == r["role"] for r in test)
-        metrics[variant] = {"timing_attacker": timing_attack(train, test),
-                            "trace_attacker_accuracy": proportion(correct, len(test)),
-                            "latency": latency([r["latency_ms"] for r in test]),
-                            "mean_cpu_ms": statistics.mean(r["cpu_ms"] for r in test),
-                            "over_floor": sum(r["latency_ms"] > floor_ms for r in test)}
-    return {"paper_pages": "9–10, Figure 2", "kind": "measured local workflows with controlled service delays",
-            "hypothesis": "Branch-specific traces/timing reveal roles; a facade restricts trace visibility and padding reduces timing signal.",
-            "observer": "External observer sees exported trace names and total response time, not internal traces.",
-            "floor_ms": floor_ms, "metrics": metrics,
-            "limits": ["Service delays (user 1 ms, admin 3 ms) are constructed; wall-clock times are measured.",
-                       "Training and test calls are disjoint, balanced and randomized; no attacker uses test labels to fit.",
-                       "Wilson intervals describe sample proportions, not proof of independence or zero leakage.",
-                       "The facade deliberately hides internal names from this observer; privileged telemetry observers still see them.",
-                       "Simple sleep padding can itself retain role-dependent timing on some hosts.",
-                       "Deadline padding spins for up to the final 2 ms, increasing CPU cost; no constant-time guarantee.",
-                       "Padding may leak under contention or slow handlers; accuracy need not equal chance."],
+        for trial, role in schedule:
+            rows.append({"trial": trial, "split": split, "variant": "exposed", **_workflow(role)})
+    train = [r for r in rows if r["split"] == "train"]
+    test = [r for r in rows if r["split"] == "test"]
+    mapping = {}
+    for trace in {tuple(r["trace"]) for r in train}:
+        subset = [r for r in train if tuple(r["trace"]) == trace]
+        mapping[trace] = "admin" if sum(r["role"] == "admin" for r in subset) > len(subset) / 2 else "user"
+    correct = sum(mapping.get(tuple(r["trace"]), "user") == r["role"] for r in test)
+    metrics = {"exposed": {"timing_attacker": timing_attack(train, test),
+                           "trace_attacker_accuracy": proportion(correct, len(test)),
+                           "latency": latency([r["latency_ms"] for r in test])}}
+    return {"paper_pages": "9–10, Figure 2", "kind": "local workflow information-exposure demonstration",
+            "hypothesis": "Branch-specific traces and response timing can reveal the caller's role.",
+            "observer": "Observer is assumed to see function trace names and total response time.",
+            "metrics": metrics,
+            "limits": ["Threat demonstration only; the review specifies no workflow side-channel defense.",
+                       "Service delays (user 1 ms, admin 3 ms) are constructed; wall-clock times are measured.",
+                       "Training and test calls are disjoint, balanced and randomized.",
+                       "Inference accuracy depends on this host and the limited tested attacker.",
+                       "No shared-host CPU/cache channel or real cloud trace access is evaluated."],
             "observations": rows}
 
 
 def rollouts(trials, seed):
     rng, rows = random.Random(seed), []
     for trial in range(trials):
-        variants = ["rolling-stale-replicas", "atomic-cutover"]
-        rng.shuffle(variants)
-        for variant in variants:
-            deployment = LocalRollout(atomic=variant == "atomic-cutover")
-            start = time.perf_counter_ns()
-            deployment.update(first_replica_only=True)
-            # Requests execute concurrently after the local cutover/first-replica update.
-            with ThreadPoolExecutor(max_workers=4) as executor:
-                calls = list(executor.map(lambda replica: deployment.invoke(replica, "retired"), range(4)))
-                legitimate = list(executor.map(lambda replica: deployment.invoke(replica, "active"), range(4)))
-            rows.append({"trial": trial, "variant": variant, "attack": True,
-                         "case": "revocation-with-stale-replicas", "calls": calls,
-                         "attack_succeeded": any(c["allowed"] for c in calls),
-                         "stale_allows": sum(c["allowed"] for c in calls),
-                         "legitimate_succeeded": all(c["allowed"] for c in legitimate),
-                         "latency_ms": (time.perf_counter_ns() - start) / 1e6})
-            # Hold a previously authorized request while a revocation tries to cut over.
-            deployment = LocalRollout(atomic=variant == "atomic-cutover")
-            admitted, release, updating, updated = (threading.Event() for _ in range(4))
-            def hold():
-                admitted.set()
-                if not release.wait(5):
-                    raise RuntimeError("Timed out waiting for in-flight release")
-            def cutover():
-                updating.set()
-                deployment.update()
-                updated.set()
-            start = time.perf_counter_ns()
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                request = executor.submit(deployment.invoke, 0, "retired", hold)
-                try:
-                    if not admitted.wait(5):
-                        raise RuntimeError("Request did not reach admission barrier")
-                    update = executor.submit(cutover)
-                    if not updating.wait(5):
-                        raise RuntimeError("Update did not start")
-                    if deployment.atomic:
-                        cutover_before_release = updated.wait(.005)
-                    else:
-                        if not updated.wait(5):
-                            raise RuntimeError("Unprotected update did not complete")
-                        cutover_before_release = True
-                finally:
-                    release.set()
-                result = request.result(timeout=5)
-                update.result(timeout=5)
-            rows.append({"trial": trial, "variant": variant, "attack": True,
-                         "case": "inflight-revocation", "calls": [result],
-                         "cutover_before_release": cutover_before_release,
-                         "attack_succeeded": result["allowed"] and cutover_before_release,
-                         "legitimate_succeeded": deployment.invoke(0, "active")["allowed"],
-                         "latency_ms": (time.perf_counter_ns() - start) / 1e6})
-    return {"paper_pages": "10", "kind": "concurrent requests to a local in-process replica pool",
-            "hypothesis": "Partial updates leave revoked access reachable; atomic code/policy cutover prevents post-cutover stale access.",
-            "limits": ["Four replica objects share one host and synchronization lock, not distributed nodes.",
-                       "The stale-version window is intentionally forced; its production frequency is not estimated.",
-                       "In-flight requests admitted before revocation may finish; protected cutover waits for them.",
-                       "No packet loss, provider convergence or cloud availability claim."],
+        deployment = LocalRollout()
+        start = time.perf_counter_ns()
+        deployment.update(first_replica_only=True)
+        replica_order = list(range(4))
+        rng.shuffle(replica_order)
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            calls = list(executor.map(lambda replica: deployment.invoke(replica, "retired"), replica_order))
+            legitimate = list(executor.map(lambda replica: deployment.invoke(replica, "active"), replica_order))
+        rows.append({"trial": trial, "variant": "rolling-stale-replicas", "attack": True,
+                     "case": "revocation-with-stale-replicas", "calls": calls,
+                     "attack_succeeded": any(c["allowed"] for c in calls),
+                     "stale_allows": sum(c["allowed"] for c in calls),
+                     "legitimate_succeeded": all(c["allowed"] for c in legitimate),
+                     "latency_ms": (time.perf_counter_ns() - start) / 1e6})
+    return {"paper_pages": "10", "kind": "concurrent calls to a partially updated local replica pool",
+            "hypothesis": "Partial updates leave revoked access reachable through stale replicas.",
+            "limits": ["Threat demonstration only; the review does not specify a rollout defense.",
+                       "Four replica objects share one process; they are not distributed nodes.",
+                       "The stale-version window is intentionally forced, not measured in production.",
+                       "No provider convergence or cloud availability claim."],
             "observations": rows}

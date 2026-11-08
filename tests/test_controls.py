@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ssrsf.controls import (AccessControl, Identity, RateDetector, Rejected,
+from ssrsf.controls import (AccessControl, Identity, Rejected,
                            accept_event, inventory, sign_event, verify_inventory)
 from ssrsf.metrics import confusion, percentile, proportion
 
@@ -90,31 +90,6 @@ class InventoryTests(unittest.TestCase):
             extra.unlink()
             path.unlink()
             self.assertFalse(verify_inventory(root, lock))
-
-
-class DetectorTests(unittest.TestCase):
-    def test_spike_confirms_without_poisoning_baseline(self):
-        detector = RateDetector()
-        for _ in range(20):
-            self.assertFalse(detector.observe(10))
-        self.assertFalse(detector.observe(90))
-        self.assertFalse(detector.observe(90))
-        self.assertTrue(detector.observe(90))
-        self.assertEqual(detector.mean, 10)
-        self.assertFalse(detector.observe(10))
-
-    def test_low_increase_is_not_mislabeled_as_detected(self):
-        detector = RateDetector()
-        detector.observe(10)
-        self.assertFalse(any(detector.observe(12) for _ in range(30)))
-
-    def test_invalid_inputs(self):
-        for kwargs in ({"alpha": float("nan")}, {"deviations": float("inf")}, {"confirmations": True}, {"confirmations": 0}):
-            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
-                RateDetector(**kwargs)
-        for count in (-1, 1.2, True):
-            with self.subTest(count=count), self.assertRaises(ValueError):
-                RateDetector().observe(count)
 
 
 class MetricTests(unittest.TestCase):

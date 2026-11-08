@@ -58,10 +58,8 @@ class PersistenceExperiments(unittest.TestCase):
 
 class InfrastructureExperiments(unittest.TestCase):
     def test_trace_attacker_has_disjoint_balanced_splits(self):
-        result = side_channels(3, 42, 4)
+        result = side_channels(3, 42)
         self.assertEqual(result["metrics"]["exposed"]["trace_attacker_accuracy"]["rate"], 1)
-        self.assertEqual(result["metrics"]["facade-floor"]["trace_attacker_accuracy"]["rate"], .5)
-        self.assertEqual(result["metrics"]["facade-deadline"]["trace_attacker_accuracy"]["rate"], .5)
         for variant in result["metrics"]:
             train = [r for r in result["observations"] if r["variant"] == variant and r["split"] == "train"]
             test = [r for r in result["observations"] if r["variant"] == variant and r["split"] == "test"]
@@ -78,50 +76,44 @@ class InfrastructureExperiments(unittest.TestCase):
         self.assertEqual(first["held_out_accuracy"]["rate"], 1)
         self.assertEqual(second["held_out_accuracy"]["rate"], 0)
 
-    def test_stale_replicas_and_actual_inflight_revocation(self):
+    def test_partial_update_exposes_three_stale_replicas(self):
         result = rollouts(3, 42)
-        summary = summarize(result)
-        self.assertEqual(summary["rolling-stale-replicas"]["attack_success"]["rate"], 1)
-        self.assertEqual(summary["atomic-cutover"]["attack_success"]["rate"], 0)
-        self.assertTrue(all(r["legitimate_succeeded"] for r in result["observations"]))
-        protected = [r for r in result["observations"] if r["variant"] == "atomic-cutover" and r["case"] == "inflight-revocation"]
-        self.assertTrue(all(not r["cutover_before_release"] for r in protected))
+        self.assertEqual(set(summarize(result)), {"rolling-stale-replicas"})
+        for row in result["observations"]:
+            self.assertTrue(row["attack_succeeded"])
+            self.assertEqual(row["stale_allows"], 3)
+            self.assertTrue(row["legitimate_succeeded"])
 
 
 class BillingExperiments(unittest.TestCase):
     def run_trace(self, case):
         import random
         trace = workload(case, random.Random(42))
-        return {name: simulate(trace, name, .001) for name in ("uncontrolled", "alert-only", "adaptive-quota", "fixed-quota")}
+        return {name: simulate(trace, name, .001) for name in ("uncontrolled", "alert-only", "fixed-quota")}
 
-    def test_paired_dispatch_counts_and_costs(self):
+    def test_alert_notifies_without_enforcing_and_quota_limits_dispatch(self):
         results = self.run_trace("sustained-attack")
-        baseline, alert, limited = (results[k] for k in ("uncontrolled", "alert-only", "adaptive-quota"))
+        baseline, alert, limited = (results[k] for k in ("uncontrolled", "alert-only", "fixed-quota"))
         self.assertEqual(baseline["dispatch_count"], alert["dispatch_count"])
         self.assertEqual(baseline["modeled_spend"], alert["modeled_spend"])
         self.assertLess(limited["accepted_attack"], baseline["accepted_attack"])
-        self.assertLess(limited["modeled_spend"], baseline["modeled_spend"])
         self.assertEqual(limited["modeled_spend"], limited["dispatch_count"] * .001)
+        self.assertEqual(alert["alert_delay_minutes"], 1)
+        self.assertTrue(all(r["accepted_attack"] + r["accepted_legitimate"] <= 20 for r in limited["buckets"]))
 
-    def test_enforcement_waits_for_closed_bucket_confirmation(self):
-        import random
-        result = simulate(workload("sustained-attack", random.Random(42)), "adaptive-quota", .001)
-        self.assertEqual(result["alert_delay_minutes"], 3)
-        self.assertEqual(result["enforcement_delay_minutes"], 3)
-        self.assertGreater(result["attack_invocations_before_alert"], 0)
+    def test_legitimate_bursts_can_alert_and_be_throttled(self):
+        result = self.run_trace("legitimate-burst")
+        self.assertGreater(result["alert-only"]["detection"]["fp"], 0)
+        self.assertEqual(result["alert-only"]["rejected_legitimate"], 0)
+        self.assertGreater(result["fixed-quota"]["rejected_legitimate"], 0)
 
-    def test_legitimate_bursts_false_page_and_drop(self):
-        result = self.run_trace("legitimate-burst")["adaptive-quota"]
-        self.assertGreater(result["detection"]["fp"], 0)
-        self.assertGreater(result["rejected_legitimate"], 0)
-        self.assertIsNone(result["detection"]["recall"]["rate"])
+    def test_low_rate_attack_passes_below_limits(self):
+        result = self.run_trace("low-rate-attack")
+        for row in result.values():
+            self.assertEqual(row["accepted_attack"], 50)
+            self.assertIsNone(row["alert_delay_minutes"])
 
-    def test_low_rate_miss_remains_in_results(self):
-        result = self.run_trace("low-rate-attack")["adaptive-quota"]
-        self.assertGreater(result["detection"]["fn"], 0)
-        self.assertGreater(result["accepted_attack"], 0)
-
-    def test_fixed_quota_does_not_claim_to_detect_attacks(self):
+    def test_fixed_quota_has_no_detector(self):
         result = self.run_trace("sustained-attack")["fixed-quota"]
         self.assertFalse(any(r["alert"] for r in result["buckets"]))
         self.assertIsNone(result["alert_delay_minutes"])
@@ -130,7 +122,7 @@ class BillingExperiments(unittest.TestCase):
 
 class EvidenceTests(unittest.TestCase):
     def test_full_bundle_roundtrip_and_integrity(self):
-        bundle = evaluate(trials=2, floor_ms=4)
+        bundle = evaluate(trials=2)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             write_bundle(bundle, root)
@@ -145,7 +137,7 @@ class EvidenceTests(unittest.TestCase):
             self.assertIn("timing_accuracy", (root / "metrics.csv").read_text())
 
     def test_invalid_run_configuration(self):
-        for kwargs in ({"trials": 0}, {"trials": True}, {"seed": -1}, {"floor_ms": float("nan")},
+        for kwargs in ({"trials": 0}, {"trials": True}, {"seed": -1},
                        {"unit_price": -1}, {"selected": []}, {"selected": ["events", "events"]}):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 evaluate(**kwargs)

@@ -15,17 +15,13 @@ from . import __version__
 from .application import authorization, dependencies, events
 from .billing import billing
 from .infrastructure import persistence, rollouts, side_channels
-from .integration import framework
-from .sensitivity import sensitivity
-from .lifecycle import lifecycle
-from .robustness import robustness
 from .metrics import latency, proportion
 
 PAPER = {"title": "Serverless computing: a security perspective", "authors": "Marin, Perino, Di Pietro",
          "year": 2022, "doi": "10.1186/s13677-022-00347-w",
          "url": "https://doi.org/10.1186/s13677-022-00347-w", "type": "review",
          "numerical_reference_results": None}
-EXPERIMENTS = ("events", "authorization", "dependencies", "persistence", "side-channels", "rollouts", "billing", "framework", "sensitivity", "lifecycle", "robustness")
+EXPERIMENTS = ("events", "authorization", "dependencies", "persistence", "side-channels", "rollouts", "billing")
 
 
 def summarize(experiment):
@@ -44,33 +40,29 @@ def summarize(experiment):
     return summary
 
 
-def evaluate(trials=30, seed=42, floor_ms=8., unit_price=.000001, selected=EXPERIMENTS):
+def evaluate(trials=30, seed=42, unit_price=.000001, selected=EXPERIMENTS):
     if isinstance(trials, bool) or not isinstance(trials, int) or not 2 <= trials <= 200:
         raise ValueError("Use 2–200 trials")
     if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= 2**32 - 1:
         raise ValueError("Seed must be an integer in [0, 2^32 - 1]")
-    if not math.isfinite(floor_ms) or not 1 <= floor_ms <= 100:
-        raise ValueError("Timing floor must be 1–100 ms")
     if not math.isfinite(unit_price) or not 0 < unit_price <= 1e6:
         raise ValueError("Unit price must be finite and positive (at most 1e6)")
     if not selected or len(set(selected)) != len(selected) or any(name not in EXPERIMENTS for name in selected):
         raise ValueError("Choose unique known experiments")
     runners = {"events": lambda s: events(trials, s), "authorization": lambda s: authorization(trials, s),
                "dependencies": lambda s: dependencies(trials, s), "persistence": lambda s: persistence(trials, s),
-               "side-channels": lambda s: side_channels(trials, s, floor_ms),
-               "rollouts": lambda s: rollouts(trials, s), "billing": lambda s: billing(trials, s, unit_price),
-               "framework": lambda s: framework(trials, s), "sensitivity": lambda s: sensitivity(trials, s, unit_price),
-               "lifecycle": lambda s: lifecycle(trials, s), "robustness": lambda s: robustness(trials, s, unit_price)}
+               "side-channels": lambda s: side_channels(trials, s),
+               "rollouts": lambda s: rollouts(trials, s), "billing": lambda s: billing(trials, s, unit_price)}
     results = {}
     for name in selected:
         # Stable per-experiment seeds: selecting a subset does not change its inputs.
         experiment_seed = seed + EXPERIMENTS.index(name)
         results[name] = {"seed": experiment_seed, **runners[name](experiment_seed)}
         results[name]["summary"] = summarize(results[name])
-    return {"schema": "serverless-security-review.local.v1", "package_version": __version__, "paper": PAPER,
+    return {"schema": "serverless-security-review.local.v2", "package_version": __version__, "paper": PAPER,
             "timestamp_utc": datetime.now(timezone.utc).isoformat(),
             "environment": {"python": sys.version, "platform": platform.platform(), "machine": platform.machine()},
-            "configuration": {"trials": trials, "seed": seed, "floor_ms": floor_ms, "unit_price": unit_price,
+            "configuration": {"trials": trials, "seed": seed, "unit_price": unit_price,
                               "experiments": list(selected)},
             "interpretation": "Tests selected qualitative hypotheses in a constructed local testbed; not reproduction of numerical paper results.",
             "unimplemented_provider_topics": ["Hypervisor/container escape and isolation comparisons (Table 2)",
@@ -96,13 +88,13 @@ def render_report(bundle):
         lines += [f"## {name}", "", f'Article pp. {experiment["paper_pages"]}. {experiment["hypothesis"]}', "", f'Execution: {experiment["kind"]}.', ""]
         if name == "side-channels":
             lines += ["Attacker training and testing use different calls. Both splits contain equal numbers of roles. Chance accuracy is 50%.", "",
-                      "| Variant | Trace role accuracy | Held-out timing role accuracy | Response p50 / p95 (ms) | Mean CPU (ms) |", "|---|---|---|---|---|"]
+                      "| Variant | Trace role accuracy | Held-out timing role accuracy | Response p50 / p95 (ms) |", "|---|---|---|---|"]
             for variant, metric in experiment["metrics"].items():
                 t = metric["latency"]
-                lines.append(f'| {variant} | {_rate(metric["trace_attacker_accuracy"])} | {_rate(metric["timing_attacker"]["held_out_accuracy"])} | {t["p50_ms"]:.3f} / {t["p95_ms"]:.3f} | {metric["mean_cpu_ms"]:.3f} |')
-            lines += ["", "Trace protection here comes from restricting the observer's exported names. A response floor is not proof against timing inference or shared-host channels.", ""]
-        elif name in ("billing", "sensitivity", "robustness"):
-            lines += ["Cost units are modeled, not currency. Rows show means across paired trials. Detection recall/FPR use post-training bucket counts; they do not measure production accuracy.", "",
+                lines.append(f'| {variant} | {_rate(metric["trace_attacker_accuracy"])} | {_rate(metric["timing_attacker"]["held_out_accuracy"])} | {t["p50_ms"]:.3f} / {t["p95_ms"]:.3f} |')
+            lines += ["", "This experiment demonstrates the Figure 2 threat. It does not introduce a defense.", ""]
+        elif name == "billing":
+            lines += ["Cost units are modeled, not currency. Rows show means across paired trials. Alert recall/FPR compare fixed spending alerts with attack-labeled post-warmup buckets; they do not measure production accuracy. Uncontrolled and fixed-quota variants have no detector.", "",
                       "| Workload | Variant | Attack calls accepted | Legitimate calls rejected | Modeled spend | Alert recall | False alert rate | Mean alert delay (min) |", "|---|---|---:|---:|---:|---:|---:|---:|"]
             for case in sorted({r["case"] for r in experiment["observations"]}):
                 for variant in sorted(experiment["summary"]):
@@ -117,18 +109,7 @@ def render_report(bundle):
                     delays = [r["alert_delay_minutes"] for r in rows if r["alert_delay_minutes"] is not None]
                     delay = f"{statistics.mean(delays):.2f}" if delays else "none"
                     lines.append(f'| {case} | {variant} | {mean("accepted_attack"):.1f} | {mean("rejected_legitimate"):.1f} | {mean("modeled_spend"):.6f} | {recall} | {fpr} | {delay} |')
-            lines += ["", "Alert-only has the same cost as uncontrolled dispatch. Adaptive quotas act in the minute after confirmation. Low-rate and ramp attacks can evade detection; quotas can reject legitimate bursts. See raw buckets for pre-alert excess calls and enforcement delay.", ""]
-        elif name == "framework":
-            lines += ["| Case | Variant | Completed / attempts | Side effect present | Evidence gap on recovery | p50 total (ms) |",
-                      "|---|---|---|---|---|---|"]
-            for case in sorted(experiment["cases"]):
-                for variant in sorted({r["variant"] for r in experiment["observations"] if r["case"] == case}):
-                    selected = [r for r in experiment["observations"] if r["case"] == case and r["variant"] == variant]
-                    lines.append(f'| {case} | {variant} | {sum(r["completed"] for r in selected)}/{len(selected)} | '
-                                 f'{sum(r["side_effect"] for r in selected)}/{len(selected)} | '
-                                 f'{sum(r["gap_observed"] for r in selected)}/{len(selected)} | '
-                                 f'{latency([r["latency_ms"] for r in selected])["p50_ms"]:.3f} |')
-            lines += ["", "Completion is the attempted operation, including adversarial operations. Audit fault cases are availability/evidence outcomes, not attack-success rates. Side effects report whether the document exists after the attempted operation (before recovery).", ""]
+            lines += ["", "Alert-only has the same cost as uncontrolled dispatch. Spending alerts do not enforce a cap or classify requests. Fixed quotas can reject legitimate bursts; low-rate attacks may remain below both limits.", ""]
         else:
             lines += ["| Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |", "|---|---|---|---|"]
             for variant, metric in experiment["summary"].items():
@@ -171,18 +152,11 @@ def write_bundle(bundle, output: Path):
                     for label, value in (("trace_accuracy", metric["trace_attacker_accuracy"]),
                                          ("timing_accuracy", metric["timing_attacker"]["held_out_accuracy"])):
                         writer.writerow([name, variant, label, value["rate"], value["count"], value["total"], *value["wilson95"]])
-                    writer.writerow([name, variant, "mean_cpu_ms", metric["mean_cpu_ms"], "", "", "", ""])
-            if name in ("billing", "sensitivity", "robustness"):
+            if name == "billing":
                 for case in sorted({r["case"] for r in experiment["observations"]}):
                     for variant in sorted(experiment["summary"]):
                         rows = [r for r in experiment["observations"] if r["case"] == case and r["variant"] == variant]
                         for key in ("modeled_spend", "modeled_attack_spend", "accepted_attack", "rejected_legitimate", "attack_invocations_before_alert"):
                             writer.writerow([name + "/" + case, variant, "mean_" + key, statistics.mean(r[key] for r in rows), "", len(rows), "", ""])
-            if name == "framework":
-                for case in experiment["cases"]:
-                    for variant in sorted({r["variant"] for r in experiment["observations"] if r["case"] == case}):
-                        rows = [r for r in experiment["observations"] if r["case"] == case and r["variant"] == variant]
-                        for key in ("completed", "side_effect", "gap_observed"):
-                            writer.writerow([name + "/" + case, variant, key, statistics.mean(r[key] for r in rows), sum(r[key] for r in rows), len(rows), "", ""])
     files = ["results.json", "report.md", "metrics.csv"]
     (output / "SHA256SUMS").write_text("".join(f'{hashlib.sha256((output / name).read_bytes()).hexdigest()}  {name}\n' for name in files))

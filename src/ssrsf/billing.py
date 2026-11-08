@@ -4,7 +4,6 @@ from __future__ import annotations
 import random
 import time
 
-from .controls import RateDetector
 from .metrics import confusion
 
 
@@ -29,13 +28,13 @@ def workload(case, rng):
     return buckets
 
 
-def simulate(buckets, variant, unit_price, quota=20, *, deviations=4., detector=None):
-    if variant not in ("uncontrolled", "alert-only", "adaptive-quota", "fixed-quota", "training-quota"):
+def simulate(buckets, variant, unit_price, quota=20):
+    if variant not in ("uncontrolled", "alert-only", "fixed-quota"):
         raise ValueError("Unknown control")
-    detector, previous_alert = detector or RateDetector(deviations=deviations), False
+    spending_limit = quota * unit_price
     records, ledger = [], []
     for minute, arrivals in enumerate(buckets):
-        cap = quota if variant == "fixed-quota" or (variant in ("adaptive-quota", "training-quota") and previous_alert) else len(arrivals)
+        cap = quota if variant == "fixed-quota" else len(arrivals)
         accepted_legitimate = accepted_attack = 0
         for position, malicious in enumerate(arrivals):
             if position < cap:
@@ -44,16 +43,15 @@ def simulate(buckets, variant, unit_price, quota=20, *, deviations=4., detector=
                 ledger.append((minute, (position * 17 + minute) % 257))
                 accepted_attack += int(malicious)
                 accepted_legitimate += int(not malicious)
-        alert = detector.observe(len(arrivals)) if variant in ("alert-only", "adaptive-quota", "training-quota") else False
-        records.append({"minute": minute, "training": minute < 20,
+        # Closed-bucket spending alert: notification only, with no automatic enforcement.
+        alert = variant == "alert-only" and (accepted_legitimate + accepted_attack) * unit_price > spending_limit
+        records.append({"minute": minute, "warmup": minute < 20,
                         "offered_legitimate": arrivals.count(False), "offered_attack": arrivals.count(True),
                         "accepted_legitimate": accepted_legitimate, "accepted_attack": accepted_attack,
                         "rejected_legitimate": arrivals.count(False) - accepted_legitimate,
                         "rejected_attack": arrivals.count(True) - accepted_attack,
-                        "alert": alert, "quota_applied": cap < len(arrivals), "frozen_mean": detector.mean})
-        # Detect at the end of a closed minute; enforcement begins next minute.
-        previous_alert = alert
-    evaluated = [r for r in records if not r["training"]]
+                        "alert": alert, "quota_applied": cap < len(arrivals)})
+    evaluated = [r for r in records if not r["warmup"]]
     first_attack = next((r["minute"] for r in records if r["offered_attack"]), None)
     first_alert = next((r["minute"] for r in records if r["alert"] and first_attack is not None and r["minute"] >= first_attack), None)
     first_enforcement = next((r["minute"] for r in records if r["quota_applied"] and first_attack is not None and r["minute"] >= first_attack), None)
@@ -76,7 +74,7 @@ def billing(trials, seed, unit_price):
     for trial in range(trials):
         for case in ("steady", "legitimate-burst", "sustained-attack", "low-rate-attack", "slow-ramp"):
             buckets = workload(case, rng)
-            variants = ["uncontrolled", "alert-only", "adaptive-quota", "fixed-quota"]
+            variants = ["uncontrolled", "alert-only", "fixed-quota"]
             rng.shuffle(variants)
             for variant in variants:
                 start = time.perf_counter_ns()
@@ -84,14 +82,16 @@ def billing(trials, seed, unit_price):
                 rows.append({"trial": trial, "case": case, "variant": variant,
                              "latency_ms": (time.perf_counter_ns() - start) / 1e6, **measured})
     return {"paper_pages": "11", "kind": "synthetic labeled demand; actual local function dispatch ledger",
-            "hypothesis": "Anomaly detection and quotas can limit wallet abuse, with missed attacks and legitimate drops.",
-            "configuration": {"bucket_seconds": 60, "buckets": 70, "training_buckets": 20,
+            "hypothesis": "Spending alerts notify without limiting work; fixed invocation quotas limit cost and may reject legitimate calls.",
+            "configuration": {"bucket_seconds": 60, "buckets": 70, "warmup_buckets": 20,
                               "baseline": "uniform integers 8..12", "quota_per_minute": 20,
                               "unit_price": unit_price, "price_units": "arbitrary cost units per accepted invocation",
-                              "alpha": .2, "deviations": 4., "confirmations": 3},
+                              "alert_limit_per_bucket": 20 * unit_price},
             "limits": ["Simulated minutes advance immediately, not a wall-clock load or scalability benchmark.",
                        "No cloud bill, real concurrency quota, network overhead, retries or downstream costs.",
-                       "Labels are hidden from enforcement; legitimate bursts can page and lose legitimate requests.",
+                       "Spending alerts use a fixed per-bucket limit, not an anomaly detector or request classifier.",
+                       "Labels are hidden from enforcement; legitimate bursts can trigger alerts or lose legitimate requests.",
+                       "The local per-bucket cap approximates the quota idea; it is not a provider concurrency limit.",
                        "Bucket labels and repeated fixture trials are correlated; do not treat them as a real-world attack population.",
                        "Demand for all control variants is paired exactly; alert-only never rejects an invocation."],
             "observations": rows}
