@@ -29,13 +29,13 @@ def workload(case, rng):
     return buckets
 
 
-def simulate(buckets, variant, unit_price, quota=20, *, deviations=4.):
-    if variant not in ("uncontrolled", "alert-only", "adaptive-quota", "fixed-quota"):
+def simulate(buckets, variant, unit_price, quota=20, *, deviations=4., detector=None):
+    if variant not in ("uncontrolled", "alert-only", "adaptive-quota", "fixed-quota", "training-quota"):
         raise ValueError("Unknown control")
-    detector, previous_alert = RateDetector(deviations=deviations), False
+    detector, previous_alert = detector or RateDetector(deviations=deviations), False
     records, ledger = [], []
     for minute, arrivals in enumerate(buckets):
-        cap = quota if variant == "fixed-quota" or (variant == "adaptive-quota" and previous_alert) else len(arrivals)
+        cap = quota if variant == "fixed-quota" or (variant in ("adaptive-quota", "training-quota") and previous_alert) else len(arrivals)
         accepted_legitimate = accepted_attack = 0
         for position, malicious in enumerate(arrivals):
             if position < cap:
@@ -44,7 +44,7 @@ def simulate(buckets, variant, unit_price, quota=20, *, deviations=4.):
                 ledger.append((minute, (position * 17 + minute) % 257))
                 accepted_attack += int(malicious)
                 accepted_legitimate += int(not malicious)
-        alert = detector.observe(len(arrivals)) if variant in ("alert-only", "adaptive-quota") else False
+        alert = detector.observe(len(arrivals)) if variant in ("alert-only", "adaptive-quota", "training-quota") else False
         records.append({"minute": minute, "training": minute < 20,
                         "offered_legitimate": arrivals.count(False), "offered_attack": arrivals.count(True),
                         "accepted_legitimate": accepted_legitimate, "accepted_attack": accepted_attack,

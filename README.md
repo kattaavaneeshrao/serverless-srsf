@@ -4,7 +4,7 @@
 
 The article is a security review. It does not propose the SRSF implementation or provide numerical experimental results to reproduce. This repository turns its recommendations and research questions into executable local experiments, compares vulnerable baselines with mitigations, and reports newly measured results. The article's qualitative Tables 1 and 2 are contextual comparisons, not benchmark targets.
 
-The project includes an integrated local text-document workflow with acknowledged SQLite audit, exact-policy deployment checks, independent purge approval/replay protection, controlled telemetry access and an invocation budget. The reliability scope is legitimate-request completion under controls, local rollout consistency, audit dependency failures and execution-lifecycle latency. Production uptime SLOs, error budgets and incident recovery have not been evaluated. The research manuscript is [main.tex](main.tex).
+The project includes an integrated local text-document workflow with acknowledged SQLite audit, exact-policy deployment checks, independent purge approval/replay protection, controlled telemetry access and an invocation budget. The reliability scope is legitimate-request completion under controls, local rollout consistency, audit dependency failures and execution-lifecycle latency. Production uptime SLOs, error budgets and incident recovery have not been evaluated. Manuscript source files are maintained outside this repository.
 
 ## Run everything locally
 
@@ -69,7 +69,7 @@ The previous cloud document-processing application, browser console, AWS resourc
 
 ## Repository
 
-- `src/ssrsf/`: controls, process runtime, nine experiment groups, metrics, evidence writer and CLI.
+- `src/ssrsf/`: controls, process runtime, eleven experiment groups, metrics, evidence writer and CLI.
 - `tests/`: adversarial control, concurrency, lifecycle, accounting and evidence-integrity tests.
 - `research/`: article identity and methodology/coverage mapping.
 - `results/`: retained measured run, raw observations, CSV, report and checksums.
@@ -102,4 +102,34 @@ with TemporaryDirectory() as directory:
 
 Tokens above are fixture credentials. SQLite FULL commits, HMAC chains and trusted Python roles implement local semantics; they do not provide cloud retention, independent OS identities or isolation from the filesystem owner. The policy language accepts exact rules only and rejects unsupported scope. Text classification is a deterministic word-count rule, not an inference service. See `research/methodology.md` for failure and recovery semantics.
 
-The manuscript `main.tex` is a single-file research manuscript with inline tables generated from the retained evidence. No LaTeX compilation is required to regenerate those tables. Use `python3 scripts/paper_evidence.py --check` to detect evidence drift, or omit `--check` to refresh the marked evidence block after a new evaluation. Publication novelty and acceptance are not established by passing the software tests.
+Manuscript source files are excluded from this repository. The optional evidence and source-checking helpers remain available for an externally maintained manuscript. Publication novelty and acceptance are not established by passing the software tests.
+
+
+## Restart recovery and robustness probes
+
+```bash
+PYTHONPATH=src python3 -m ssrsf evaluate --experiment lifecycle --trials 30 --output results-recovery
+PYTHONPATH=src python3 -m ssrsf evaluate --experiment robustness --trials 30 --output results-robustness
+```
+
+Bootstrap keys and the trusted artifact inventory persist in a mode-0600 owner-trusted file. Reopening a workflow verifies the audit chain and restores accepted policy history. Existing database state without keys is never silently reinitialized. This supports normal local restart, not owner-resistant storage, key rotation or power-loss recovery. Invocation quotas reset on restart.
+
+After a purge grant expires, the independent investigator fixture can query an operation without executing deletion again:
+
+```python
+outcome = app.broker.investigate(operation_id, "investigator-token")
+```
+
+The lifecycle evaluation uses two fresh interpreters and an injected exit-audit failure. The robustness evaluation compares EWMA with a fixed-training reference and fixed quota under seasonal/growing demand, legitimate crowds, intermittent attacks and ramps. All outcomes are retained, including misses and legitimate rejection.
+
+Root-level LaTeX manuscript files are ignored. The project and its measured evidence can be validated without a manuscript present.
+
+
+After regenerating the retained evaluation, retain compatibility checks and validate evidence:
+
+```bash
+python3 scripts/validate.py --python .venv/bin/python --python python3
+python3 scripts/paper_evidence.py --check --evidence-only
+```
+
+`results/validation.json` binds test logs and interpreter versions to the exact retained source/evidence. The installed versions are detected rather than assumed. Same-host compatibility checks do not establish independent-host replication. For an external manuscript, both optional manuscript scripts accept `--manuscript PATH`; evidence refresh requires the marked evidence blocks in that file. Overleaf compilation and layout review remain with the authors.

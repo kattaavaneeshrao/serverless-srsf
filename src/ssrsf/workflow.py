@@ -15,6 +15,7 @@ from .audit import AuditCollector, InvocationEvidence
 from .broker import ApprovalAuthority, DocumentStore, PurgeBroker
 from .controls import RateDetector, Rejected, accept_event, inventory, sign_event, verify_inventory
 from .policy import PolicyDeployment, Request, normalize
+from .state import bootstrap
 
 CONTROLS = frozenset({"audit", "broker", "gate", "integrity", "telemetry"})
 
@@ -54,19 +55,20 @@ class ReferenceApp:
         if not self.controls <= CONTROLS:
             raise ValueError("Unknown control")
         root.mkdir(parents=True, exist_ok=True)
-        self.credentials = {"user-token": ("alice", "user"), "admin-token": ("operator", "administrator")}
-        self.audit = AuditCollector(root / "audit.sqlite", secrets.token_bytes(32))
+        keys, self.trusted_inventory = bootstrap(root)
+        self.credentials = {"user-token": ("alice", "user"), "admin-token": ("operator", "administrator"),
+                            "investigator-token": ("auditor", "investigator")}
+        self.audit = AuditCollector(root / "audit.sqlite", keys["audit"])
+        if not self.audit.verify():
+            raise Rejected("Audit integrity failure at startup")
         self.documents = DocumentStore(root / "documents.sqlite")
-        self.authority = ApprovalAuthority(secrets.token_bytes(32), self.credentials, clock)
+        self.authority = ApprovalAuthority(keys["approval"], self.credentials, clock)
         self.broker = PurgeBroker(self.documents, self.authority, self.audit)
         self.workspace = root / "scratch"
-        self.workspace.mkdir()
+        self.workspace.mkdir(exist_ok=True)
         self.evidence = InvocationEvidence(self.audit, "extract-worker-1", self.workspace)
         self.artifacts = root / "artifacts"
-        self.artifacts.mkdir()
-        (self.artifacts / "parser.rules").write_text("utf8-text; max-value=128; whitespace-normalization")
-        self.trusted_inventory = inventory(self.artifacts)
-        self.event_key = secrets.token_bytes(32)
+        self.event_key = keys["events"]
         catalogue = [Request(p, a, "public/item") for p in ("extract", "retired") for a in ("read", "delete")]
         self.policy = PolicyDeployment([rule("extract", "read", "public/item")], catalogue, self.audit)
         self.budget = InvocationBudget()
@@ -156,7 +158,7 @@ class ReferenceApp:
     def telemetry(self, credential, detailed=False):
         identity = self.identity(credential)
         if detailed and "telemetry" in self.controls:
-            if identity[1] != "administrator":
+            if identity[1] not in ("administrator", "investigator"):
                 raise Rejected("Detailed telemetry restricted to investigator")
         if detailed:
             return {"trace": list(self.trace), "audit": self.audit.records("investigator")}

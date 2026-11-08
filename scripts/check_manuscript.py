@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Static LaTeX source checks only. Does not render or invoke a compiler."""
 import re
+import argparse
 from pathlib import Path
 
-path = Path(__file__).resolve().parents[1] / 'main.tex'
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--manuscript', type=Path, default=Path(__file__).resolve().parents[1] / 'main.tex')
+path = parser.parse_args().manuscript
 source = path.read_text()
 # Remove comments and inline verbatim before parsing TeX delimiters.
 source = re.sub(r'(?<!\\)%[^\n]*', '', source)

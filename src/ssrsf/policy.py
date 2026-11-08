@@ -46,6 +46,17 @@ class PolicyDeployment:
             raise ValueError("A nonempty exact request catalogue is required")
         self.collector, self.version = collector, 1
         self.lock = threading.RLock()
+        # Accepted records are the local durable policy commit point. A restart
+        # must not silently resurrect permissions removed by a previous cutover.
+        for row in collector.records("investigator"):
+            event = row["event"]
+            if event.get("kind") == "deployment" and event.get("status") == "accepted":
+                if "rules" not in event or event["version_before"] != self.version:
+                    raise Rejected("Incomplete policy recovery history")
+                rules = tuple(tuple(r) for r in event["rules"])
+                if any(Request(*r[:3]) not in self.catalogue for r in rules):
+                    raise Rejected("Recovered policy exceeds catalogue")
+                self.rules, self.version = rules, self.version + 1
 
     def deploy(self, candidate, change_id):
         # Detach input before normalization and hashing so audit and installation agree.
@@ -69,6 +80,7 @@ class PolicyDeployment:
             self.collector.append("deploy:" + change_id, {"kind": "deployment", "status": status,
                 "reason": reason, "matrix": matrix,
                 "candidate_sha256": hashlib.sha256(canonical({"policy": candidate})).hexdigest(),
+                "rules": rules,
                 "version_before": self.version})
             if status == "accepted":
                 self.rules = rules

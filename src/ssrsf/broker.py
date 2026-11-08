@@ -27,6 +27,8 @@ class DocumentStore:
             db.execute("CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, owner TEXT NOT NULL, "
                        "version TEXT NOT NULL, raw TEXT NOT NULL, extracted TEXT NOT NULL, label TEXT NOT NULL)")
             db.execute("CREATE TABLE IF NOT EXISTS consumed (nonce TEXT PRIMARY KEY, operation TEXT UNIQUE NOT NULL)")
+            db.execute("CREATE TABLE IF NOT EXISTS operations (operation TEXT PRIMARY KEY, requester TEXT NOT NULL, "
+                       "deleted INTEGER NOT NULL, targets TEXT NOT NULL, grant_digest TEXT NOT NULL)")
 
     @contextmanager
     def connect(self):
@@ -124,6 +126,8 @@ class PurgeBroker:
                 if row is None or row[0] != version:
                     raise Rejected("Missing or replaced target; no targets deleted")
             db.execute("INSERT INTO consumed VALUES (?,?)", (grant["nonce"], grant["operation"]))
+            db.execute("INSERT INTO operations VALUES (?,?,?,?,?)", (grant["operation"], grant["requester"],
+                       len(grant["targets"]), json.dumps(grant["targets"]), hashlib.sha256(canonical(grant)).hexdigest()))
             for doc_id, version in grant["targets"]:
                 db.execute("DELETE FROM documents WHERE id=? AND version=?", (doc_id, version))
             db.commit()
@@ -139,3 +143,22 @@ class PurgeBroker:
         if row is None:
             return {"status": "not-committed"}
         return {"status": "committed", "operation": row[0]}
+
+    def investigate(self, operation: str, credential: str):
+        """Independently authenticated, read-only recovery even after grant expiry.
+
+        The caller supplies an operation ID, never authority to reexecute deletion.
+        Recovery itself requires a functioning audit/authority path.
+        """
+        identity = self.authority.identity(credential)
+        if identity[1] != "investigator" or not isinstance(operation, str) or not operation:
+            raise Rejected("Independent investigator authorization required")
+        with self.store.connect() as db:
+            row = db.execute("SELECT requester,deleted,targets,grant_digest FROM operations WHERE operation=?",
+                             (operation,)).fetchone()
+        outcome = {"status": "not-committed", "operation": operation} if row is None else {
+            "status": "committed", "operation": operation, "requester": row[0], "deleted": row[1],
+            "targets": json.loads(row[2]), "grant_digest": row[3]}
+        self.audit.append("investigate:" + secrets.token_hex(16), {"kind": "reconciliation",
+                          "investigator": identity[0], "outcome": outcome})
+        return outcome

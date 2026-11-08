@@ -17,13 +17,15 @@ from .billing import billing
 from .infrastructure import persistence, rollouts, side_channels
 from .integration import framework
 from .sensitivity import sensitivity
+from .lifecycle import lifecycle
+from .robustness import robustness
 from .metrics import latency, proportion
 
 PAPER = {"title": "Serverless computing: a security perspective", "authors": "Marin, Perino, Di Pietro",
          "year": 2022, "doi": "10.1186/s13677-022-00347-w",
          "url": "https://doi.org/10.1186/s13677-022-00347-w", "type": "review",
          "numerical_reference_results": None}
-EXPERIMENTS = ("events", "authorization", "dependencies", "persistence", "side-channels", "rollouts", "billing", "framework", "sensitivity")
+EXPERIMENTS = ("events", "authorization", "dependencies", "persistence", "side-channels", "rollouts", "billing", "framework", "sensitivity", "lifecycle", "robustness")
 
 
 def summarize(experiment):
@@ -57,7 +59,8 @@ def evaluate(trials=30, seed=42, floor_ms=8., unit_price=.000001, selected=EXPER
                "dependencies": lambda s: dependencies(trials, s), "persistence": lambda s: persistence(trials, s),
                "side-channels": lambda s: side_channels(trials, s, floor_ms),
                "rollouts": lambda s: rollouts(trials, s), "billing": lambda s: billing(trials, s, unit_price),
-               "framework": lambda s: framework(trials, s), "sensitivity": lambda s: sensitivity(trials, s, unit_price)}
+               "framework": lambda s: framework(trials, s), "sensitivity": lambda s: sensitivity(trials, s, unit_price),
+               "lifecycle": lambda s: lifecycle(trials, s), "robustness": lambda s: robustness(trials, s, unit_price)}
     results = {}
     for name in selected:
         # Stable per-experiment seeds: selecting a subset does not change its inputs.
@@ -98,7 +101,7 @@ def render_report(bundle):
                 t = metric["latency"]
                 lines.append(f'| {variant} | {_rate(metric["trace_attacker_accuracy"])} | {_rate(metric["timing_attacker"]["held_out_accuracy"])} | {t["p50_ms"]:.3f} / {t["p95_ms"]:.3f} | {metric["mean_cpu_ms"]:.3f} |')
             lines += ["", "Trace protection here comes from restricting the observer's exported names. A response floor is not proof against timing inference or shared-host channels.", ""]
-        elif name in ("billing", "sensitivity"):
+        elif name in ("billing", "sensitivity", "robustness"):
             lines += ["Cost units are modeled, not currency. Rows show means across paired trials. Detection recall/FPR use post-training bucket counts; they do not measure production accuracy.", "",
                       "| Workload | Variant | Attack calls accepted | Legitimate calls rejected | Modeled spend | Alert recall | False alert rate | Mean alert delay (min) |", "|---|---|---:|---:|---:|---:|---:|---:|"]
             for case in sorted({r["case"] for r in experiment["observations"]}):
@@ -169,7 +172,7 @@ def write_bundle(bundle, output: Path):
                                          ("timing_accuracy", metric["timing_attacker"]["held_out_accuracy"])):
                         writer.writerow([name, variant, label, value["rate"], value["count"], value["total"], *value["wilson95"]])
                     writer.writerow([name, variant, "mean_cpu_ms", metric["mean_cpu_ms"], "", "", "", ""])
-            if name in ("billing", "sensitivity"):
+            if name in ("billing", "sensitivity", "robustness"):
                 for case in sorted({r["case"] for r in experiment["observations"]}):
                     for variant in sorted(experiment["summary"]):
                         rows = [r for r in experiment["observations"] if r["case"] == case and r["variant"] == variant]

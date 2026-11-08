@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
+import math
 import statistics
 import sys
 import unittest
@@ -12,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
+TIMING_FIGURE = '\\begin{figure*}[t]\n\\centering\n\\begin{minipage}{0.49\\textwidth}\n\\centering\n\\begin{tikzpicture}\n\\begin{axis}[width=\\linewidth,height=5cm,ybar,bar width=12pt,ymin=0,ymax=110,\n ylabel={Held-out timing accuracy (\\%)},symbolic x coords={Exposed,Floor,Deadline},xtick=data,\n tick label style={font=\\small},label style={font=\\small},nodes near coords,\n every node near coord/.append style={font=\\small},enlarge x limits=.25,grid=major,grid style={gray!15}]\n\\addplot[fill=controlblue!75,draw=controlblue] coordinates {(Exposed,100.000) (Floor,88.333) (Deadline,91.667)};\n\\draw[dashed,attackred] (axis cs:Exposed,50) -- (axis cs:Deadline,50);\n\\end{axis}\n\\end{tikzpicture}\n\\end{minipage}\\hfill\n\\begin{minipage}{0.49\\textwidth}\n\\centering\n\\begin{tikzpicture}\n\\begin{axis}[width=\\linewidth,height=5cm,ybar,bar width=12pt,ymin=0,ymax=1.4,\n ylabel={Mean process CPU per response (ms)},symbolic x coords={Exposed,Floor,Deadline},xtick=data,\n tick label style={font=\\small},label style={font=\\small},nodes near coords,\n every node near coord/.append style={font=\\small},enlarge x limits=.25,grid=major,grid style={gray!15}]\n\\addplot[fill=mutedgreen!75,draw=mutedgreen] coordinates {(Exposed,0.023300) (Floor,0.045367) (Deadline,0.709717)};\n\\end{axis}\n\\end{tikzpicture}\n\\end{minipage}\n\\caption{Measured timing inference and CPU tradeoff on the retained host. Each accuracy uses 60 held-out balanced-role responses; the dashed line marks 50\\pct\\ chance accuracy. CPU bars are mean process times for the same test responses. Training data are separate. Service delays and the 8~ms target are constructed experimental parameters.}\n\\label{fig:timing}\n\\end{figure*}'
 
 
 def escape(text):
@@ -44,11 +47,11 @@ def recall(rows, false=False):
 
 
 def table(columns, header, rows, caption, label, *, small='small'):
-    return '\n'.join([r'\begin{table}[htbp]', '\\centering\\' + small,
+    return '\n'.join([r'\begin{table*}[t]', '\\centering\\' + small,
         r'\begin{tabularx}{\linewidth}{@{}' + columns + r'@{}}', r'\toprule',
         header + r' \\', r'\midrule', *[row + r' \\' for row in rows],
         r'\bottomrule', r'\end{tabularx}', r'\caption{' + caption + r'}\label{' + label + '}',
-        r'\end{table}', ''])
+        r'\end{table*}', ''])
 
 
 def render(bundle):
@@ -63,8 +66,33 @@ def render(bundle):
         r'\newcommand{\ObservationCount}{' + str(sum(len(e['observations']) for e in bundle['experiments'].values())) + '}',
         r'\newcommand{\TestCount}{' + str(count) + '}',
     ])
+    metrics = bundle['experiments']['side-channels']['metrics']
+    validation = json.loads((ROOT / 'results/validation.json').read_text())
+    versions = ', '.join(dict.fromkeys(r['python'] for r in validation['runs']))
+    extras = [
+        r'\newcommand{\RunVersion}{' + escape(bundle['package_version']) + '}',
+        r'\newcommand{\ValidationVersions}{' + escape(versions) + '}',
+        r'\newcommand{\FloorAccuracy}{' + percent(metrics['facade-floor']['timing_attacker']['held_out_accuracy']) + '}',
+        r'\newcommand{\DeadlineAccuracy}{' + percent(metrics['facade-deadline']['timing_attacker']['held_out_accuracy']) + '}',
+    ]
+    digest = hashlib.sha256((ROOT / 'results/results.json').read_bytes()).hexdigest()
+    extras.append(r'\newcommand{\ResultsDigest}{' + digest[:32] + r'\\' + '\n' + digest[32:] + '}')
+    group_labels = {'events': 'Events', 'authorization': 'Authorization', 'dependencies': 'Artifacts',
+                    'persistence': 'Persistence', 'side-channels': 'Side channels', 'rollouts': 'Rollouts',
+                    'billing': 'Primary billing', 'framework': 'Integrated workflow', 'sensitivity': 'Sensitivity',
+                    'lifecycle': 'Restart recovery', 'robustness': 'Follow-up probes'}
+    counts = [r'\begin{table}[t]', r'\centering\small',
+              r'\caption{Retained observations across variants. Billing units are complete traces; side-channel units include both splits; integrated units are scenario/variant trials; restart units each contain two interpreters.}',
+              r'\label{tab:counts}', r'\begin{tabularx}{\columnwidth}{Yrr}', r'\toprule',
+              r'Group & Variants & Observations\\', r'\midrule']
+    for name, experiment in bundle['experiments'].items():
+        rows = experiment['observations']
+        counts.append(f"{group_labels[name]} & {len({r['variant'] for r in rows})} & {len(rows)}" + r'\\')
+    counts += [r'\bottomrule', r'\end{tabularx}', r'\end{table}']
+    extras.append(r'\newcommand{\ObservationTable}{' + '\n'.join(counts) + '}')
+    macros += '\n' + '\n'.join(extras)
     lines = [r'\section{Results}\label{sec:results}', '',
-             r'All values in this section are generated from the retained evidence, not transcribed from the source review. Counts describe the labeled fixtures and comparison variants defined in Section~\ref{sec:method}.', '',
+             r'All values in this section are generated from the retained evidence, not transcribed from the source review. Counts describe the labeled fixtures and comparison variants defined in Section~\ref{sec:protocol}.', '',
              r'\subsection{Component Admission and Lifecycle Outcomes}']
     rows = []
     pairs = [('events', 'Events', 'unchecked', 'validated-signed'),
@@ -123,6 +151,16 @@ def render(bundle):
     lines.append(f"Simple-floor timing accuracy was {percent(floor)}, versus {percent(deadline)} for deadline padding in this run. "
                  'The facade removes role separation for the tested trace classifier, but floor timing remains informative. '
                  'Deadline padding incurs additional CPU work and provides no constant-time guarantee. These observations are host- and attacker-dependent.\n')
+    figure = TIMING_FIGURE
+    accuracies = [(name, metrics[v]['timing_attacker']['held_out_accuracy']['rate'] * 100)
+                  for name, v in [('Exposed', 'exposed'), ('Floor', 'facade-floor'), ('Deadline', 'facade-deadline')]]
+    cpus = [(name, metrics[v]['mean_cpu_ms'])
+            for name, v in [('Exposed', 'exposed'), ('Floor', 'facade-floor'), ('Deadline', 'facade-deadline')]]
+    coordinates = iter([' '.join(f'({name},{value:.6f})' for name, value in accuracies),
+                        ' '.join(f'({name},{value:.6f})' for name, value in cpus)])
+    figure = re.sub(r'coordinates \{[^}]+\}', lambda m: 'coordinates {' + next(coordinates) + '}', figure)
+    figure = figure.replace('ymax=1.4', f'ymax={max(1.4, math.ceil(max(value for _, value in cpus) * 12) / 10):g}')
+    lines.append(figure)
     lines.append(r'\subsection{Billing Control Outcomes}')
     rows = []
     cases = {'steady': 'Steady', 'legitimate-burst': 'Valid burst', 'sustained-attack': 'Sustained', 'low-rate-attack': 'Low rate', 'slow-ramp': 'Ramp'}
@@ -155,6 +193,35 @@ def render(bundle):
     lines.append(table('llYrrrr', '$d$ & $q$ & Sust. attack & Sust. drops & Burst drops & Low recall & Ramp recall', rows,
         'All nine prespecified settings over paired independent workload seeds. Call columns are per-trial means; recalls are pooled post-training bucket proportions. The full evidence also retains steady traffic, costs, false alerts, delays and dispatch checksums. The sweep is descriptive and is not used to select a best setting.', 'tab:sensitivity', small='footnotesize'))
     lines.append('Changing the quota changes admitted work and legitimate rejection after an alert; changing the threshold changes which buckets trigger it. The sweep varies only two parameters within fixed workload families. It does not cover baseline seasonality, delayed telemetry, distributed enforcement or an adaptive attacker.\n')
+    lines.append(r'\subsection{Normal-Interpreter Restart and Post-Expiry Recovery}')
+    lifecycle = bundle['experiments']['lifecycle']['observations']
+    checks = [('exit_audit_failure_observed', 'Injected exit failure observed'),
+              ('expired_grant_rejected', 'Expired deletion grant rejected'),
+              ('operation_recovered', 'Independent operation receipt recovered'),
+              ('revocation_retained', 'Extraction revocation retained'),
+              ('retained_version_matches', 'Unrelated document version retained'),
+              ('anchored_chain_valid', 'Retained chain anchor verified'),
+              ('single_nonce_consumption', 'Exactly one nonce consume'),
+              ('deleted_document_absent', 'Deleted document remains absent')]
+    rows = [f"{label} & {sum(r[key] for r in lifecycle)}/{len(lifecycle)}" for key, label in checks]
+    lines.append(table('Yr', 'Recovery invariant & Observed / trials', rows,
+        'Each trial uses two separate isolated-mode Python interpreters and advances a fixed test clock. These are normal exit/restart checks, not power-loss, key-rotation or distributed-failover results.', 'tab:recovery'))
+    lines.append(f"Median total lifecycle duration was {statistics.median(r['latency_ms'] for r in lifecycle):.3f} ms, including both interpreters and all setup, commit and recovery work. "
+                 'The original grant cannot authorize deletion after expiry; an independently authenticated investigator reads the committed operation without deleting again. '
+                 'Keys remain owner-trusted and invocation budgets reset on restart.\n')
+    lines.append(r'\subsection{Follow-Up Billing Families and Fixed-Training Reference}')
+    labels = {'stationary': 'Stationary', 'seasonal-legitimate': 'Seasonal', 'growing-legitimate': 'Growth',
+              'flash-crowd': 'Crowds', 'pulsed-attack': 'Pulses', 'ramp-attack': 'Ramp'}
+    rows = []
+    for case, label in labels.items():
+        for variant, short in [('adaptive-quota', 'EWMA'), ('training-quota', 'Training reference'), ('fixed-quota', 'Fixed quota')]:
+            rs = selected(bundle, 'robustness', case, variant)
+            rows.append(' & '.join([label, short, f"{mean(rs, 'accepted_attack'):.1f}",
+                                    f"{mean(rs, 'rejected_legitimate'):.1f}", recall(rs), recall(rs, True)]))
+    lines.append(table('YYrrrr', 'Family & Control & Attack calls & Valid drops & Recall & FPR', rows,
+        'Disclosed follow-up probes over paired seeds: means per trial and pooled post-training bucket rates. The frozen training reference is a project comparator, not a published defense. Uncontrolled and alert-only outcomes and all compact bucket records are also retained in the artifact.', 'tab:robustness', small='footnotesize'))
+    lines.append('These probes were introduced after the initial study. They test whether legitimate seasonality/growth and intermittent abuse expose failure modes beyond the primary workloads; they are not a preregistered holdout or production validation. '
+                 'No configuration or retained host run is selected as a best result.\n')
     return macros, '\n\n'.join(lines)
 
 
@@ -170,6 +237,8 @@ def replace_block(text, label, content):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true')
+    parser.add_argument('--evidence-only', action='store_true', help='Verify retained evidence without reading a manuscript')
+    parser.add_argument('--manuscript', type=Path, default=ROOT / 'main.tex')
     args = parser.parse_args()
     evidence = ROOT / 'results'
     for line in (evidence / 'SHA256SUMS').read_text().splitlines():
@@ -180,8 +249,23 @@ def main():
     for name, digest in bundle['source_sha256'].items():
         if hashlib.sha256((ROOT / name).read_bytes()).hexdigest() != digest:
             raise ValueError(f'Evidence source mismatch: {name}; regenerate evaluation first')
+    validation = json.loads((evidence / 'validation.json').read_text())
+    if validation['results_sha256'] != hashlib.sha256((evidence / 'results.json').read_bytes()).hexdigest():
+        raise ValueError('Validation record refers to different results; run scripts/validate.py')
+    if validation['source_sha256'] != bundle['source_sha256'] or not validation['runs']:
+        raise ValueError('Validation source record mismatch')
+    if any(r['exit_code'] != 0 or r['tests'] <= 0 for r in validation['runs']):
+        raise ValueError('Manuscript requires successful recorded tests')
+    if args.evidence_only:
+        print('Evidence, source hashes and recorded tests verified; no manuscript read or compiled.')
+        return 0
+    expected_config = {'trials': 30, 'seed': 42, 'floor_ms': 8., 'unit_price': .000001}
+    if any(bundle['configuration'][key] != value for key, value in expected_config.items()):
+        raise ValueError('This manuscript methods section assumes the retained default protocol; revise methods before using other parameters')
+    if len(bundle['experiments']) != 11:
+        raise ValueError('Canonical manuscript requires all eleven experiment groups')
     macros, results = render(bundle)
-    path = ROOT / 'main.tex'
+    path = args.manuscript
     original = path.read_text()
     expected = replace_block(replace_block(original, 'MACROS', macros), 'RESULTS', results)
     if args.check:
@@ -191,7 +275,7 @@ def main():
         print('Inline evidence matches checksummed results and current source. No compilation performed.')
     else:
         path.write_text(expected)
-        print('Updated inline evidence in main.tex. No compilation performed.')
+        print(f'Updated inline evidence in {path.name}. No compilation performed.')
     return 0
 
 
