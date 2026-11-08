@@ -11,12 +11,12 @@ from ssrsf.evaluation import EXPERIMENTS
 
 
 class InteractiveCLI(unittest.TestCase):
-    def test_no_arguments_runs_selected_experiments_and_reprompts(self):
+    def test_interactive_runs_selected_experiments_and_reprompts(self):
         with tempfile.TemporaryDirectory() as directory:
             answers = ["unknown", "1,1", "1,authorization", "0", "2", "-1", "123",
                        "nan", "0.25", directory]
             with patch("builtins.input", side_effect=answers), contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(main([]), 0)
+                self.assertEqual(main(["interactive"]), 0)
             result = json.loads((Path(directory) / "results.json").read_text())
             self.assertEqual(result["configuration"], {
                 "trials": 2, "seed": 123, "unit_price": 0.25,
@@ -40,5 +40,5 @@ class InteractiveCLI(unittest.TestCase):
                     patch("ssrsf.cli.evaluate") as evaluate, \
                     contextlib.redirect_stdout(io.StringIO()), \
                     contextlib.redirect_stderr(io.StringIO()):
-                self.assertEqual(main([]), status)
+                self.assertEqual(main(["interactive"]), status)
                 evaluate.assert_not_called()

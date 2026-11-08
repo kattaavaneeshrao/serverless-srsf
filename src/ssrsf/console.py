@@ -1,4 +1,4 @@
-"""Hands-on terminal interface to the real ReferenceApp workflow."""
+"""Terminal interface for the Serverless SRSF document workflow."""
 from __future__ import annotations
 
 import json
@@ -12,10 +12,10 @@ HELP = """Commands:
   ingest TEXT         Process your text (up to 128 characters)
   file PATH           Process a UTF-8 text file (up to 128 characters)
   read                Show the current document and extracted text
-  auth TOKEN          Use user-token, admin-token, investigator-token, or try an invalid token
+  auth TOKEN          Authenticate with user-token, admin-token or investigator-token
   approve             Request a purge grant for the current document version
-  purge               Delete using the last grant; try before approval or twice
-  tamper TEXT         Modify a signed event before delivery; observe rejection
+  purge               Delete the approved document version using a single-use grant
+  tamper TEXT         Submit a modified event to verify integrity enforcement
   telemetry           Request detailed traces and audit records with the current role
   audit               Verify the audit chain
   budget              Show ingest accounting and reset the fixed 20-call quota
@@ -50,7 +50,7 @@ def session(app, args):
         show({"audit_verified": app.audit.verify()})
         return 0
 
-    print("SRSF document workflow — enter your own text and commands.")
+    print("Serverless SRSF — document processing console.")
     print(HELP)
     grant = None
     targets = []
@@ -112,8 +112,8 @@ def session(app, args):
 
 def run(args):
     if args.state is not None:
-        print(f"Demo state: {args.state.resolve()}")
+        print(f"Workflow state: {args.state.resolve()}")
         return session(ReferenceApp(args.state), args)
-    with TemporaryDirectory(prefix="ssrsf-demo-") as directory:
-        print("Using temporary demo state; it is removed when this session ends.")
+    with TemporaryDirectory(prefix="ssrsf-") as directory:
+        print("Using temporary workflow state; it is removed when this session ends.")
         return session(ReferenceApp(Path(directory)), args)
