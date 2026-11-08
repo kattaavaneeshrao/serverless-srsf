@@ -1,4 +1,4 @@
-"""Run the paper-scoped local security evaluation."""
+"""Run the document workflow or the paper-scoped security evaluation."""
 from __future__ import annotations
 
 import argparse
@@ -77,8 +77,13 @@ def _interactive():
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog="ssrsf", description="Local evaluation of selected threats and recommendations in Marin et al. (2022)")
+    parser = argparse.ArgumentParser(prog="ssrsf", description="Reusable local document security workflow and evaluation of selected recommendations in Marin et al. (2022)")
     commands = parser.add_subparsers(dest="command")
+    demo = commands.add_parser("demo", help="Process your own text or explore the secure document workflow")
+    source = demo.add_mutually_exclusive_group()
+    source.add_argument("--text", help="Process this text and print the stored document")
+    source.add_argument("--file", type=Path, help="Process a UTF-8 text file")
+    demo.add_argument("--state", type=Path, help="Keep document workflow state across runs")
     commands.add_parser("interactive", help="Choose evaluation settings through guided prompts (also the default)")
     run = commands.add_parser("evaluate", help="Run paired local experiments and write measured evidence")
     run.add_argument("--trials", type=int, default=30, help="Repeated trials per case (2–200)")
@@ -88,6 +93,9 @@ def main(argv=None):
     run.add_argument("--output", type=Path, default=Path("results"))
     args = parser.parse_args(argv)
     try:
+        if args.command == "demo":
+            from .demo import run as run_demo
+            return run_demo(args)
         if args.command in (None, "interactive"):
             args = _interactive()
             print(f"Running {len(args.experiment)} experiments with {args.trials} trials per case…")
