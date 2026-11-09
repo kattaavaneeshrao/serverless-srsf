@@ -4,7 +4,7 @@ Article: [Serverless computing: a security perspective](https://doi.org/10.1186/
 
 The article is a review with qualitative comparisons and countermeasure suggestions. It supplies no numerical benchmark results to reproduce. These are newly measured local experiments, with explicitly constructed workloads.
 
-Run: 2026-11-09T10:48:40.918501+00:00; 30 trials; seed 42; Python 3.14.8.
+Run: 2026-11-09T11:27:18.858452+00:00; 30 trials; seed 42; Python 3.14.8.
 
 Raw observations, configuration, machine details and source hashes are in `results.json`. `metrics.csv` contains aggregate rates/timings. Timings include initialization and vary by host. Binomial Wilson intervals are descriptive; repeated fixtures and correlated buckets do not establish population effectiveness.
 
@@ -16,8 +16,8 @@ Execution: executed local event consumer.
 
 | Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |
 |---|---|---|---|
-| unchecked | 150/150 (100.0%; 95% CI 97.5–100.0%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 0.000 / 0.001 |
-| validated-signed | 0/150 (0.0%; 95% CI 0.0–2.5%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 0.004 / 0.012 |
+| unchecked | 150/150 (100.0%; 95% CI 97.5–100.0%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 0.000 / 0.000 |
+| validated-signed | 0/150 (0.0%; 95% CI 0.0–2.5%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 0.004 / 0.005 |
 
 Limits:
 
@@ -33,7 +33,7 @@ Execution: executed local function/service access checks.
 
 | Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |
 |---|---|---|---|
-| gateway-only-broad-role | 120/120 (100.0%; 95% CI 96.9–100.0%) | 90/90 (100.0%; 95% CI 95.9–100.0%) | 0.000 / 0.000 |
+| gateway-only-broad-role | 120/120 (100.0%; 95% CI 96.9–100.0%) | 90/90 (100.0%; 95% CI 95.9–100.0%) | 0.000 / 0.001 |
 | per-function-least-privilege | 0/120 (0.0%; 95% CI 0.0–3.1%) | 90/90 (100.0%; 95% CI 95.9–100.0%) | 0.000 / 0.001 |
 
 Limits:
@@ -48,8 +48,8 @@ Execution: executed file integrity experiment.
 
 | Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |
 |---|---|---|---|
-| hash-locked-inventory | 0/60 (0.0%; 95% CI 0.0–6.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.108 / 0.189 |
-| untracked | 60/60 (100.0%; 95% CI 94.0–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.019 / 0.096 |
+| hash-locked-inventory | 0/60 (0.0%; 95% CI 0.0–6.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.114 / 1.062 |
+| untracked | 60/60 (100.0%; 95% CI 94.0–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.018 / 0.189 |
 
 Limits:
 
@@ -64,9 +64,9 @@ Execution: real subprocesses and temporary filesystem.
 
 | Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |
 |---|---|---|---|
-| fresh-workspace | 0/30 (0.0%; 95% CI 0.0–11.4%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 51.529 / 57.293 |
-| warm-monitored | 0/30 (0.0%; 95% CI 0.0–11.4%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 26.241 / 31.734 |
-| warm-unchecked | 30/30 (100.0%; 95% CI 88.6–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 25.600 / 28.762 |
+| fresh-workspace | 0/30 (0.0%; 95% CI 0.0–11.4%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 51.224 / 56.378 |
+| warm-monitored | 0/30 (0.0%; 95% CI 0.0–11.4%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 26.208 / 28.015 |
+| warm-unchecked | 30/30 (100.0%; 95% CI 88.6–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 25.454 / 30.264 |
 
 Limits:
 
@@ -85,7 +85,7 @@ Attacker training and testing use different calls. Both splits contain equal num
 
 | Variant | Trace role accuracy | Held-out timing role accuracy | Response p50 / p95 (ms) |
 |---|---|---|---|
-| exposed | 60/60 (100.0%; 95% CI 94.0–100.0%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 2.600 / 3.782 |
+| exposed | 60/60 (100.0%; 95% CI 94.0–100.0%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 2.313 / 3.772 |
 
 This experiment demonstrates the Figure 2 threat. It does not introduce a defense.
 
@@ -105,7 +105,7 @@ Execution: concurrent calls to a partially updated local replica pool.
 
 | Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |
 |---|---|---|---|
-| rolling-stale-replicas | 30/30 (100.0%; 95% CI 88.6–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.547 / 1.146 |
+| rolling-stale-replicas | 30/30 (100.0%; 95% CI 88.6–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.225 / 0.514 |
 
 Limits:
 

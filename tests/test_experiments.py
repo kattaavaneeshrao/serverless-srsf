@@ -164,6 +164,6 @@ class EvidenceTests(unittest.TestCase):
 
     def test_cli_writes_report_and_rejects_bad_parameters(self):
         with tempfile.TemporaryDirectory() as directory:
-            self.assertEqual(main(["evaluate", "--trials", "2", "--experiment", "events", "--output", directory]), 0)
+            self.assertEqual(main(["evaluate", "--non-interactive", "--trials", "2", "--experiment", "events", "--output", directory]), 0)
             self.assertTrue((Path(directory) / "report.md").exists())
-            self.assertEqual(main(["evaluate", "--trials", "0", "--output", directory]), 1)
+            self.assertEqual(main(["evaluate", "--non-interactive", "--trials", "0", "--output", directory]), 1)

@@ -11,6 +11,42 @@ from ssrsf.evaluation import EXPERIMENTS
 
 
 class InteractiveCLI(unittest.TestCase):
+    def test_default_menu_runs_guided_experiments(self):
+        with patch("builtins.input", side_effect=["invalid", "2", *([""] * 5)]), \
+                patch("ssrsf.cli.evaluate", return_value={"experiments": {}}) as evaluate, \
+                patch("ssrsf.cli.write_bundle"), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(main([]), 0)
+        evaluate.assert_called_once_with(30, 42, .000001, list(EXPERIMENTS))
+
+    def test_default_menu_can_quit_without_starting_work(self):
+        with patch("builtins.input", return_value="3"), \
+                patch("ssrsf.cli.evaluate") as evaluate, \
+                patch("ssrsf.console.run") as console, \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(main([]), 0)
+        evaluate.assert_not_called()
+        console.assert_not_called()
+
+    def test_evaluate_prompts_with_options_as_defaults(self):
+        with patch("builtins.input", side_effect=[""] * 5), \
+                patch("ssrsf.cli.evaluate", return_value={"experiments": {}}) as evaluate, \
+                patch("ssrsf.cli.write_bundle") as write_bundle, \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(main(["evaluate", "--trials", "2", "--seed", "7",
+                                   "--experiment", "events", "--unit-price", "0.25",
+                                   "--output", "custom-results"]), 0)
+        evaluate.assert_called_once_with(2, 7, .25, ["events"])
+        write_bundle.assert_called_once_with({"experiments": {}}, Path("custom-results"))
+
+    def test_non_interactive_evaluation_never_prompts(self):
+        with patch("builtins.input", side_effect=AssertionError("Unexpected prompt")), \
+                patch("ssrsf.cli.evaluate", return_value={"experiments": {}}) as evaluate, \
+                patch("ssrsf.cli.write_bundle"), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(main(["evaluate", "--non-interactive"]), 0)
+        evaluate.assert_called_once_with(30, 42, .000001, EXPERIMENTS)
+
     def test_interactive_runs_selected_experiments_and_reprompts(self):
         with tempfile.TemporaryDirectory() as directory:
             answers = ["unknown", "1,1", "1,authorization", "0", "2", "-1", "123",

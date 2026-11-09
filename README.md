@@ -14,15 +14,17 @@ Everything runs locally with Python 3.11+ and the standard library. Cloud deploy
 Run from the repository root:
 
 ```bash
-# Open the document console
+# Open the interactive menu for documents or experiments
 PYTHONPATH=src python3 -m ssrsf
 
 # Process text directly
 PYTHONPATH=src python3 -m ssrsf --text "My document about serverless security"
 
-# Configure experiments through guided prompts
-PYTHONPATH=src python3 -m ssrsf interactive
+# Open guided experiments directly
+PYTHONPATH=src python3 -m ssrsf evaluate
 ```
+
+The startup menu offers **1. Document workflow**, **2. Guided experiments** and **3. Quit**. Press Enter to open the document workflow. Both the installed `ssrsf` command and `python3 -m ssrsf` use this menu.
 
 To install the shorter `ssrsf` command:
 
@@ -37,7 +39,7 @@ On Windows, activate with `.venv\Scripts\Activate.ps1`.
 
 ## Try the document workflow
 
-Enter this session in the console:
+Choose **1. Document workflow** from the startup menu, then enter this session in the console:
 
 ```text
 ingest This is my document about serverless security.
@@ -70,6 +72,10 @@ The workflow stores one document (`public/item`), accepts at most 128 characters
 State is temporary unless `--state` is supplied:
 
 ```bash
+# Keep state while using the interactive document workflow (choose 1)
+PYTHONPATH=src python3 -m ssrsf --state /tmp/my-srsf
+
+# Process a file directly using the same persistent state
 PYTHONPATH=src python3 -m ssrsf --file /path/to/input.txt --state /tmp/my-srsf
 ```
 
@@ -104,14 +110,23 @@ The application controls live directly in `src/ssrsf/`; controlled threat fixtur
 
 ## Experiments and results
 
-Run all seven experiments, or select a subset:
+Choose **2. Guided experiments** in the startup menu, or open the prompts directly. Options supplied to `evaluate` become defaults that you can accept or change:
 
 ```bash
-PYTHONPATH=src python3 -m ssrsf evaluate --trials 30 --seed 42 --output results
+PYTHONPATH=src python3 -m ssrsf evaluate
 PYTHONPATH=src python3 -m ssrsf evaluate --experiment persistence --trials 20 --output results-persistence
 ```
 
-`interactive` offers the same configuration through prompts: experiments, trials (2–200), seed, modeled invocation price and output folder. Defaults are all experiments, 30 trials, seed 42, price `0.000001` and `results/`. Existing report files in the chosen folder are replaced. Use `evaluate --help` for options.
+Press Enter to accept each default. Invalid answers are retried; Ctrl+C or end of input cancels before evaluation starts. `ssrsf interactive` also opens guided experiments.
+
+For scripts and CI, add `--non-interactive` to run all seven experiments or a selected subset without prompts:
+
+```bash
+PYTHONPATH=src python3 -m ssrsf evaluate --non-interactive --trials 30 --seed 42 --output results
+PYTHONPATH=src python3 -m ssrsf evaluate --non-interactive --experiment persistence --trials 20 --output results-persistence
+```
+
+Guided evaluation prompts for experiments, trials (2–200), seed, modeled invocation price and output folder. Defaults are all experiments, 30 trials, seed 42, price `0.000001` and `results/`. Existing report files in the chosen folder are replaced after the final prompt. Use `evaluate --help` for options. Explicit `--text` and `--file` commands process a document directly.
 
 | Experiment | What it examines | Article reference |
 |---|---|---|
@@ -193,7 +208,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 The retained evidence hashes source, tests and documentation. After changing tracked evidence inputs, regenerate the bundle, record tests and verify it:
 
 ```bash
-PYTHONPATH=src python3 -m ssrsf evaluate --trials 30 --seed 42 --output results
+PYTHONPATH=src python3 -m ssrsf evaluate --non-interactive --trials 30 --seed 42 --output results
 python3 scripts/validate.py --python python3
 python3 scripts/check_evidence.py
 ```

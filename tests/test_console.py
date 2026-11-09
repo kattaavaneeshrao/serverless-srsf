@@ -24,7 +24,7 @@ class ConsoleTests(unittest.TestCase):
         commands = ["ingest Original document", "purge", "telemetry", "tamper My payload",
                     "auth invalid", "auth admin-token", "approve", "ingest Replacement",
                     "purge", "read", "approve", "purge", "purge", "audit", "quit"]
-        with patch("builtins.input", side_effect=commands), contextlib.redirect_stdout(io.StringIO()) as output:
+        with patch("builtins.input", side_effect=["1", *commands]), contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(main([]), 0)
         text = output.getvalue()
         for expected in ("Independent exact-scope approval required", "Detailed telemetry restricted",

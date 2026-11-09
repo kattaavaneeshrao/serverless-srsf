@@ -61,17 +61,21 @@ def _output(value):
     return path
 
 
-def _interactive():
+def _interactive(defaults=None):
+    if defaults is None:
+        defaults = argparse.Namespace(trials=30, seed=42, unit_price=.000001,
+                                      experiment=None, output=Path("results"))
     print("Serverless SRSF — guided evaluation")
     print("Press Enter to accept a default. Press Ctrl+C to cancel.")
     print("Experiments use built-in test events and attack scenarios.")
     for index, name in enumerate(EXPERIMENTS, 1):
         print(f"  {index}. {name}")
-    selected = _prompt("Experiments (all, or comma-separated numbers/names)", "all", _experiments)
-    trials = _prompt("Trials per case (2–200)", 30, lambda value: _integer(value, 2, 200))
-    seed = _prompt("Random seed (0–4294967295)", 42, lambda value: _integer(value, 0, 2**32 - 1))
-    price = _prompt("Modeled cost per invocation (arbitrary cost units)", "0.000001", _price)
-    output = _prompt("Output folder (existing report files will be replaced)", "results", _output)
+    selected = _prompt("Experiments (all, or comma-separated numbers/names)",
+                       ",".join(defaults.experiment) if defaults.experiment else "all", _experiments)
+    trials = _prompt("Trials per case (2–200)", defaults.trials, lambda value: _integer(value, 2, 200))
+    seed = _prompt("Random seed (0–4294967295)", defaults.seed, lambda value: _integer(value, 0, 2**32 - 1))
+    price = _prompt("Modeled cost per invocation (arbitrary cost units)", defaults.unit_price, _price)
+    output = _prompt("Output folder (existing report files will be replaced)", defaults.output, _output)
     return argparse.Namespace(trials=trials, seed=seed, unit_price=price,
                               experiment=selected, output=output)
 
@@ -88,6 +92,7 @@ def main(argv=None):
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("interactive", help="Choose evaluation settings through guided prompts")
     run = commands.add_parser("evaluate", help="Run paired local experiments and write measured evidence")
+    run.add_argument("--non-interactive", action="store_true", help="Run without prompts (for scripts and CI)")
     run.add_argument("--trials", type=int, default=30, help="Repeated trials per case (2–200)")
     run.add_argument("--seed", type=int, default=42)
     run.add_argument("--unit-price", type=float, default=.000001, help="Arbitrary cost units per accepted invocation")
@@ -97,9 +102,23 @@ def main(argv=None):
     try:
         if args.command is None:
             from .console import run as run_console
-            return run_console(args)
-        if args.command == "interactive":
+            if args.text is not None or args.file is not None:
+                return run_console(args)
+            print("Serverless SRSF")
+            print("  1. Document workflow\n  2. Guided experiments\n  3. Quit")
+            try:
+                choice = _prompt("Choose an activity", 1, lambda value: _integer(value, 1, 3))
+            except (EOFError, KeyboardInterrupt):
+                print("\nSession ended.")
+                return 0
+            if choice == 3:
+                return 0
+            if choice == 1:
+                return run_console(args)
             args = _interactive()
+        elif args.command == "interactive" or not args.non_interactive:
+            args = _interactive(args if args.command == "evaluate" else None)
+        if not getattr(args, "non_interactive", False):
             print(f"Running {len(args.experiment)} experiments with {args.trials} trials per case…")
         bundle = evaluate(args.trials, args.seed, args.unit_price, args.experiment or EXPERIMENTS)
         write_bundle(bundle, args.output)
