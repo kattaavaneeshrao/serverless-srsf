@@ -51,7 +51,7 @@ def session(app, args):
         return 0
 
     print("Serverless SRSF — document processing console.")
-    print(HELP)
+    print("Enter ingest TEXT to process a document, help for commands, or quit to exit.")
     grant = None
     targets = []
     while True:

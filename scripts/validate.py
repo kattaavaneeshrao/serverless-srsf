@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'src'))
+from ssrsf.evidence import source_hashes
 
 
 def main():
@@ -24,9 +26,8 @@ def main():
     args = parser.parse_args()
     evidence = ROOT / 'results'
     source = json.loads((evidence / 'results.json').read_text())
-    for name, digest in source['source_sha256'].items():
-        if hashlib.sha256((ROOT / name).read_bytes()).hexdigest() != digest:
-            raise ValueError(f'Source changed: {name}; regenerate evaluation first')
+    if source_hashes(ROOT) != source['source_sha256']:
+        raise ValueError('Source inventory changed; regenerate evaluation first')
     runs = []
     for executable in args.interpreters or [sys.executable]:
         version = subprocess.run([executable, '--version'], capture_output=True, text=True, check=True).stdout.strip()

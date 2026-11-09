@@ -4,7 +4,7 @@ from __future__ import annotations
 import random
 import time
 
-from .metrics import confusion
+from ..metrics import confusion
 
 
 def workload(case, rng):

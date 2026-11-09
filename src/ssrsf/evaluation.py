@@ -12,9 +12,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import __version__
-from .application import authorization, dependencies, events
-from .billing import billing
-from .infrastructure import persistence, rollouts, side_channels
+from .evidence import source_hashes
+from .experiments.application import authorization, dependencies, events
+from .experiments.billing import billing
+from .experiments.infrastructure import persistence, rollouts, side_channels
 from .metrics import latency, proportion
 
 PAPER = {"title": "Serverless computing: a security perspective", "authors": "Marin, Perino, Di Pietro",
@@ -128,11 +129,7 @@ def render_report(bundle):
 def write_bundle(bundle, output: Path):
     output.mkdir(parents=True, exist_ok=True)
     root = Path(__file__).resolve().parents[2]
-    paths = [*root.glob("src/ssrsf/*.py"), *root.glob("tests/*.py"),
-             *root.glob("scripts/*.py"), *root.glob("research/*"),
-             root / "pyproject.toml", root / "README.md", root / "SECURITY.md"]
-    bundle["source_sha256"] = {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
-                               for p in sorted(paths) if p.is_file()}
+    bundle["source_sha256"] = source_hashes(root)
     payload = json.dumps(bundle, indent=2, allow_nan=False) + "\n"
     (output / "results.json").write_text(payload, encoding="utf-8")
     (output / "report.md").write_text(render_report(bundle), encoding="utf-8")

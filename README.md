@@ -1,28 +1,30 @@
 # Serverless SRSF: A Site Reliability and Security Framework
 
-**Serverless SRSF is a reusable local framework for applying security controls to serverless-style application workflows, based on Marin, Perino and Di Pietro’s “Serverless computing: a security perspective” (2022).**
+Serverless SRSF is a local Python framework for applying security controls to a serverless-style document workflow. It implements selected recommendations from [Marin, Perino and Di Pietro’s “Serverless computing: a security perspective” (2022)](https://doi.org/10.1186/s13677-022-00347-w).
 
-The framework translates selected threats and recommendations from the article into event validation, authentication and ownership checks, artifact integrity checks, scratch-state monitoring and invocation quotas. It combines these controls with audit logging, deletion approvals and policy enforcement in `ReferenceApp`, a reusable Python component that runs an ingest → extract → classify document workflow.
+The project has two parts:
 
-Seven supporting experiments evaluate individual security topics underlying the framework, including event handling, authorization, dependencies, persistence, side channels, policy rollouts and billing exposure. They provide focused measurements and threat demonstrations; they do not measure the integrated framework's end-to-end effectiveness.
+- **A reusable application:** ingest → extract → classify, guarded by event validation, ownership checks, artifact integrity, audit logging, approved deletion, policy enforcement and invocation quotas.
+- **Seven supporting experiments:** controlled comparisons and threat demonstrations covering events, authorization, dependencies, persistence, side channels, rollouts and billing.
 
-The article provides the security foundation, while Serverless SRSF provides the concrete controls, application workflow and local evaluation. The article is a review, so the implementation protocols are this project's engineering choices. See [Marin et al., Journal of Cloud Computing 11, 69 (2022)](https://doi.org/10.1186/s13677-022-00347-w).
+Everything runs locally with Python 3.11+ and the standard library. Cloud deployment paths are described [below](#implementing-on-serverless-platforms); cloud adapters and infrastructure are not included. The experiments measure individual behaviors, not the integrated framework’s end-to-end effectiveness.
 
 ## Quick start
 
-Requires Python 3.11 or newer. Runtime and tests use only the standard library. Run these commands from the repository root; no cloud account, Docker or external services are required.
+Run from the repository root:
 
 ```bash
+# Open the document console
 PYTHONPATH=src python3 -m ssrsf
+
+# Process text directly
+PYTHONPATH=src python3 -m ssrsf --text "My document about serverless security"
+
+# Configure experiments through guided prompts
+PYTHONPATH=src python3 -m ssrsf interactive
 ```
 
-| Command | What it opens |
-|---|---|
-| `PYTHONPATH=src python3 -m ssrsf` | Document processing console |
-| `PYTHONPATH=src python3 -m ssrsf interactive` | Guided configuration for the framework's seven supporting experiments |
-| `PYTHONPATH=src python3 -m ssrsf evaluate` | Evaluation with default settings and output in `results/` |
-
-To install the `ssrsf` command in a virtual environment:
+To install the shorter `ssrsf` command:
 
 ```bash
 python3 -m venv .venv
@@ -31,65 +33,49 @@ python -m pip install -e .
 ssrsf
 ```
 
-On Windows, activate with `.venv\Scripts\Activate.ps1` and use `ssrsf` after installation.
+On Windows, activate with `.venv\Scripts\Activate.ps1`.
 
-## Interactive document workflow
+## Try the document workflow
 
-Serverless SRSF processes text through an ingest → extract → classify document workflow. The workflow applies authenticated event validation, parser artifact integrity, owner checks, acknowledged audit records, version-bound purge approval, restricted telemetry and a fixed invocation quota.
-
-The following session exercises document processing, access enforcement and approved deletion:
+Enter this session in the console:
 
 ```text
 ingest This is my document about serverless security.
 read
 tamper Changed input
 purge
-telemetry
 auth admin-token
 approve
-purge
 purge
 audit
 quit
 ```
 
-The first `purge` and `telemetry` requests are rejected under the user role. After switching to the administrator, approval permits one deletion; the second deletion is rejected as replay. `audit` verifies the audit chain.
+`tamper` demonstrates integrity rejection. The first `purge` fails without approval; the administrator can then approve and delete the current version. Approval expires after 30 seconds and cannot be reused or applied to a replacement version.
 
-| Command | Behavior |
+| Command | Purpose |
 |---|---|
-| `ingest TEXT` / `file PATH` | Process text or a UTF-8 file and replace the current document version |
-| `read` | Show the stored document, normalized text, version and classification |
+| `ingest TEXT` / `file PATH` | Process text or a UTF-8 file, replacing the current version |
+| `read` | Show the document, normalized text, version and classification |
 | `auth TOKEN` | Select a local fixture identity |
-| `approve` | Request an administrator purge grant for the current version |
-| `purge` | Delete with the last grant; reject missing approval, replaced versions and replay |
-| `tamper TEXT` | Alter a signed event before delivery to demonstrate integrity rejection |
-| `telemetry` | Request detailed traces and audit records; requires administrator or investigator |
+| `approve` / `purge` | Issue an administrator grant / delete its exact target version |
+| `tamper TEXT` | Demonstrate rejection of an altered signed event |
+| `telemetry` | Read detailed traces and audit records as administrator or investigator |
 | `audit` | Verify the audit chain |
-| `budget` | Show ingest accounting and start a new quota bucket |
-| `help` / `quit` | Show commands or end the session |
+| `budget` | Show ingest accounting and reset the quota bucket |
+| `help` / `quit` | Show commands / exit |
 
-Tampered input is rejected. Approval lasts 30 seconds and names an exact document version; replacing a document invalidates the old approval for deletion.
+The workflow stores one document (`public/item`), accepts at most 128 characters and normalizes whitespace. At least 10 words produces the label `long`; otherwise it is `short`. Sessions start as `user-token`; `admin-token` and `investigator-token` select the other fixture roles. Each bucket admits at most 20 ingest attempts; quotas reset with `budget` or restart.
 
-To process text or a UTF-8 file directly, and optionally keep state across sessions:
+State is temporary unless `--state` is supplied:
 
 ```bash
-PYTHONPATH=src python3 -m ssrsf --text "My own document"
 PYTHONPATH=src python3 -m ssrsf --file /path/to/input.txt --state /tmp/my-srsf
 ```
 
-State is temporary unless `--state` is supplied. The workflow has one document slot (`public/item`), accepts up to 128 characters and normalizes whitespace. Classification is a word-count rule: at least 10 words is `long`, otherwise `short`. Sessions begin as `user-token`; `auth admin-token` and `auth investigator-token` select local fixture roles. Enter `help` for commands. Each bucket admits at most 20 ingest attempts; `budget` prints accounting and resets the bucket. Quotas also reset on restart.
+## Use it from Python
 
-## How the framework applies the article
-
-Serverless SRSF implements selected recommendations from Section 6 of [Marin et al. (2022)](https://link.springer.com/article/10.1186/s13677-022-00347-w) as controls around document processing. Event validation addresses injection concerns; authentication and ownership checks address unauthorized access; authenticated input and artifact inventories address tampering; scratch-state evidence supports monitoring of reused storage; and the ingest quota limits admitted work.
-
-See the [workflow-to-paper mapping](research/methodology.md#document-workflow-mapped-to-the-paper) for subsection/page references, implementing code, tests and limitations. The framework combines extract/classify steps inside one guarded Python processing boundary; it does not deploy a separate serverless function for each step.
-
-The framework adds an audit chain, purge grants, a policy expansion gate and persistent bootstrap state to support these controls. These mechanisms are Serverless SRSF's implementation choices, motivated by the article's security concerns. The supporting experiments examine individual controls and threats using controlled fixtures. Restricted telemetry provides application-level access control, while side-channel resistance and distributed rollout safety remain outside the workflow's demonstrated guarantees.
-
-## Reuse the framework from Python
-
-Run with `PYTHONPATH=src` or install the package first. `ReferenceApp` exposes document processing, approval, deletion, policy deployment and telemetry through the same components used by the CLI:
+Install the package or run with `PYTHONPATH=src`:
 
 ```python
 from pathlib import Path
@@ -105,94 +91,106 @@ assert app.audit.verify()
 
 | Component | Responsibility |
 |---|---|
-| [`workflow.py`](src/ssrsf/workflow.py) | Compose the document pipeline, ownership checks, telemetry access and fixed ingest quota |
-| [`controls.py`](src/ssrsf/controls.py) | Validate event schemas and HMAC integrity; verify artifact inventories |
-| [`audit.py`](src/ssrsf/audit.py) | Acknowledge SQLite audit commits and capture invocation entry/exit evidence |
-| [`broker.py`](src/ssrsf/broker.py) | Store versioned documents and enforce expiring, single-use purge grants |
-| [`policy.py`](src/ssrsf/policy.py) | Enforce exact rules and hold authorization expansions for review |
-| [`state.py`](src/ssrsf/state.py) | Persist trusted bootstrap keys and artifact inventory |
+| [workflow.py](src/ssrsf/workflow.py) | Compose the pipeline, ownership checks, telemetry and quota |
+| [controls.py](src/ssrsf/controls.py) | Validate schemas and HMAC integrity; verify artifact hashes |
+| [audit.py](src/ssrsf/audit.py) | Commit audit records and capture invocation/scratch-state evidence |
+| [broker.py](src/ssrsf/broker.py) | Store versioned documents and enforce single-use purge grants |
+| [policy.py](src/ssrsf/policy.py) | Enforce exact rules and hold permission expansions for review |
+| [state.py](src/ssrsf/state.py) | Persist trusted keys and artifact inventory |
 
-Trusted keys, document versions and accepted policy history persist with the selected state directory. Startup verifies the audit chain and refuses existing databases with missing keys. Audit exit failures may leave committed side effects and an evidence gap; the broker provides read-only reconciliation. SQLite, fixture roles and the filesystem owner share a local trust boundary; this is an offline reference implementation rather than a deployed cloud service.
+Keys, documents and accepted policy history persist in the state directory. Startup verifies audit integrity and refuses existing databases with missing keys. An exit-audit failure can leave a committed operation with an evidence gap; the broker supports read-only reconciliation.
 
-## Run the supporting security experiments
+The application controls live directly in `src/ssrsf/`; controlled threat fixtures and worker processes live in [`experiments/`](src/ssrsf/experiments/). [`evaluation.py`](src/ssrsf/evaluation.py) runs them, [`evidence.py`](src/ssrsf/evidence.py) defines the source inventory, and `scripts/` validates retained results.
 
-Start the guided evaluation prompts:
+## Experiments and results
 
-```bash
-PYTHONPATH=src python3 -m ssrsf interactive
-```
-
-It asks for experiments (choose `all`, or comma-separated numbers/names), trials,
-random seed, modeled invocation cost, and the output folder. Press Enter to accept
-each default, or Ctrl+C to cancel. Invalid answers are prompted again. Experiments
-use built-in test events and attack scenarios; the prompts configure the run.
-Existing report files in the chosen output folder will be replaced.
-
-| Prompt | Accepted input | Default |
-|---|---|---|
-| Experiments | `all`, or comma-separated menu numbers/names, such as `1,2` or `events,billing` | All seven experiments |
-| Trials per case | Whole number from 2 to 200 | `30` |
-| Random seed | Whole number from 0 to 4294967295 | `42` |
-| Modeled cost per invocation | Positive, finite number up to 1000000 | `0.000001` |
-| Output folder | Folder path; `~` is supported | `results` |
-
-After the last answer, the evaluation starts automatically. When it finishes,
-open `report.md` in your chosen output folder for the evaluation report.
-The same folder contains `results.json`, `metrics.csv`, and evidence metadata.
-
-You can also start the prompts with `PYTHONPATH=src python3 -m ssrsf interactive`
-(or `ssrsf interactive` after installation).
-
-For a run without prompts:
+Run all seven experiments, or select a subset:
 
 ```bash
 PYTHONPATH=src python3 -m ssrsf evaluate --trials 30 --seed 42 --output results
-```
-
-Select individual experiments or change the modeled invocation price:
-
-```bash
 PYTHONPATH=src python3 -m ssrsf evaluate --experiment persistence --trials 20 --output results-persistence
-PYTHONPATH=src python3 -m ssrsf evaluate --experiment billing --unit-price 0.000001 --output results-billing
 ```
 
-## Scope mapped to the article
+`interactive` offers the same configuration through prompts: experiments, trials (2–200), seed, modeled invocation price and output folder. Defaults are all experiments, 30 trials, seed 42, price `0.000001` and `results/`. Existing report files in the chosen folder are replaced. Use `evaluate --help` for options.
 
-Serverless SRSF's evaluation maps seven security topics to the article. Each experiment tests a selected control or demonstrates a threat relevant to the framework.
-
-| Experiment | Article location | What runs locally |
+| Experiment | What it examines | Article reference |
 |---|---|---|
-| Events | Section 6, pp. 8–9 | Consumer-side input validation and authenticated event integrity, compared with unchecked input |
-| Authorization | Section 6, pp. 8–9 | Authentication and exact capabilities at each function boundary, compared with gateway-only authentication and broad permissions |
-| Dependencies | Section 6, p. 9 | A trusted artifact inventory rejects modified or unlisted files, compared with untracked artifacts |
-| Persistence | Section 6, pp. 10–11; warm reuse discussion p. 8 | Marker survival in reused scratch storage, compared with monitored storage and a fresh workspace |
-| Side channels | Section 6, pp. 9–10, Figure 2 | Demonstrates role inference from branching function traces and measured timing; no added defense |
-| Rollouts | Section 6, p. 10 | Demonstrates revoked access through old replicas during a partial update; no added defense |
-| Billing | Section 6, p. 11 | Uncontrolled dispatch, fixed spending alerts and fixed invocation quotas under paired demand |
+| Events | Validated, authenticated events versus unchecked input | Section 6, pp. 8–9 |
+| Authorization | Per-function capabilities versus gateway-only checks | Section 6, pp. 8–9 |
+| Dependencies | Hash inventories rejecting changed or unlisted files | Section 6, p. 9 |
+| Persistence | Scratch marker survival with reuse, monitoring or fresh workspaces | Section 6, pp. 10–11; reuse p. 8 |
+| Side channels | Role inference from traces and timing; threat demonstration | Section 6, pp. 9–10, Figure 2 |
+| Rollouts | Revoked access through deliberately stale replicas; threat demonstration | Section 6, p. 10 |
+| Billing | Uncontrolled dispatch, spending alerts and fixed quotas | Section 6, p. 11 |
 
-The event schema, HMAC-SHA256, SHA-256 inventory, exact capability representation, scratch allowlist, quota values and measurement protocols are concrete local implementation choices. The paper does not specify them. HMAC provides shared-key integrity rather than the public-key digital signatures used as an example in the review. Hash inventory checks address artifact integrity, not dependency vulnerability scanning. A per-minute invocation cap models the quota idea, not an actual provider concurrency limit.
+Read the [measured report](results/report.md) for findings and limitations. [results.json](results/results.json) contains observations, configuration, host details and source hashes; [metrics.csv](results/metrics.csv) contains aggregates. The [methodology](research/methodology.md) includes protocols and the [workflow-to-paper mapping](research/methodology.md#document-workflow-mapped-to-the-paper); [article.json](research/article.json) records the source PDF’s identity.
 
-Together, the reusable controls, document workflow and supporting experiments form Serverless SRSF's implementation of selected ideas from the article. The workflow shows how the controls operate together; the experiments measure individual security behaviors under declared conditions. Extended ablation, sensitivity, lifecycle and robustness studies, timing-padding defenses and the EWMA detector are outside the current evaluation scope.
+The paper is a review; the event schema, HMAC, artifact inventory, audit chain, approval protocol and quota settings are this project’s engineering choices. HMAC provides shared-key integrity, not replay protection. Artifact hashes detect changes, not dependency vulnerabilities.
 
-## Results and interpretation
+Rates and descriptive 95% Wilson intervals apply to constructed fixtures. Side-channel delays and stale replicas are deliberately configured. Billing uses synthetic time buckets and arbitrary cost units: alerts do not reject work, quotas can reject legitimate bursts, and low-rate attacks can pass both. These results do not establish real-world attack prevalence, provider behavior or cloud costs.
 
-Read [the measured report](results/report.md). [results.json](results/results.json) retains observations, workload buckets, parameters, machine details and source hashes; [metrics.csv](results/metrics.csv) contains aggregate measurements. [research/methodology.md](research/methodology.md) records the protocol and article mapping. [research/article.json](research/article.json) records the supplied PDF's identity and fingerprint.
+## Implementing on serverless platforms
 
-The default retained run uses 30 trials and seed 42. Legitimate completion is reported separately from attack-fixture acceptance. Rates have descriptive 95% Wilson intervals. Repeated fixed cases and correlated synthetic buckets do not establish effectiveness on real attack populations. Latencies are measured on the local host and include the stated execution boundaries.
+AWS is optional. A cloud port needs authenticated Python execution, durable transactional storage, protected keys and restricted audit access. The following are proposed implementation paths, not tested deployments.
 
-Side-channel roles have deliberately constructed 1 ms and 3 ms service delays. Separate balanced training and test calls evaluate a limited attacker. The rollout experiment deliberately leaves three of four replicas stale. These experiments demonstrate possible information exposure and stale access, not their frequency in a deployed platform or the effectiveness of a mitigation.
+Start with one function for ingest → extract → classify. Expose ingest, read, approve, purge and telemetry through authenticated endpoints. Separate approval issuance and purge into distinct identities when independent enforcement is needed. The local administrator currently both obtains approval and executes deletion; a second human approver would require an additional workflow.
 
-Billing uses 70 synthetic minute buckets that advance without waiting. Accepted invocations execute a local arithmetic function and enter an accounting ledger. Fixed spending alerts check each closed bucket against a predefined modeled limit and do not reject requests. A separate fixed quota admits at most 20 calls per bucket. Ground-truth labels are used only for scoring. Legitimate bursts can trigger alerts and lose requests; low-rate attacks can pass below both limits. Prices are arbitrary cost units, not provider pricing or actual bills. No custom anomaly detector or legitimate/attack request classifier is implemented.
+| Responsibility | AWS | Google Cloud | Azure |
+|---|---|---|---|
+| Python execution | Lambda | Cloud Run functions | Azure Functions |
+| API and identity | API Gateway + Cognito | Optional API Gateway; IAM/ID tokens for service calls, verified user JWTs for users | HTTP triggers / API Management + Entra ID |
+| Durable state | DynamoDB | Firestore | Cosmos DB for NoSQL |
+| Keys and secrets | Secrets Manager / KMS | Secret Manager / Cloud KMS | Key Vault |
+| Operational telemetry | CloudWatch | Cloud Logging / Monitoring | Application Insights / Azure Monitor |
+| Deployment definition | SAM / CloudFormation | Terraform + function deployment pipeline | Bicep / Terraform |
+
+### Changes required on every platform
+
+`ReferenceApp` constructs local SQLite stores, fixture credentials and filesystem state directly. Introduce injectable adapters for identity, storage, audit, policy, quota and key access before adding cloud handlers.
+
+- **Identity:** map verified subjects to owners and roles; authorize internal and direct invocations as well as API requests. Give processor, approval and purge identities only their required permissions. A shared HMAC key lets every holder sign grants; separate signing and verification authority where independence is required.
+- **Transactions and retries:** atomically check the document version and unused grant, consume the nonce/operation, delete the target and record the outcome. Check expiry during execution. Use stable operation IDs and durable reconciliation so retries do not repeat deletion.
+- **Audit:** acknowledge a durable entry before protected work. Commit an outcome and pending audit event with the mutation where possible, then deliver through a retryable outbox. Operational logs alone do not reproduce the authenticated audit chain; distributed integrity needs concurrency control and protected checkpoints.
+- **Shared state:** persist policy versions and transactional quota counters across instances. Define quota windows, restricted resets and revocation behavior. Local locks and counters cannot coordinate a deployment.
+- **Artifacts and scratch:** provision trusted keys/manifests outside temporary storage, verify deployed artifacts and clean per-invocation scratch. Keep the initial text-only scope while validating the port.
+
+### AWS Lambda implementation path
+
+1. Define routes and Lambda handlers using [AWS SAM](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/). Validate user JWTs, enforce ownership/roles in handlers and restrict direct invocation through IAM.
+2. Replace SQLite with DynamoDB adapters. Use [DynamoDB transactions](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/transactions.html) to condition deletion on the expected version and atomically create replay markers, outcome and audit-outbox records.
+3. Provision secrets/key permissions, separate execution roles, shared counters and durable policy. Deploy a test stack and verify concurrent requests and recovery.
+
+[Lambda environments can be reused](https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtime-environment.html), so `/tmp` cannot hold authoritative state. [Budget notifications can be delayed](https://docs.aws.amazon.com/cost-management/latest/userguide/budgets-managing-costs.html); enforce admission quotas in the request path.
+
+### Google Cloud Run functions implementation path
+
+1. Add Python HTTP handlers and [authenticated backend invocation](https://docs.cloud.google.com/functions/docs/securing/authenticating). Use dedicated service accounts and explicitly validate end-user identity, including when a gateway calls the backend.
+2. Replace SQLite with Firestore adapters. In one purge transaction, read versions/replay state and write grant consumption, deletion, outcome and the audit outbox. [Firestore may rerun transaction callbacks](https://firebase.google.com/docs/firestore/manage-data/transactions), so keep external side effects outside them.
+3. Configure [Secret Manager access](https://docs.cloud.google.com/run/docs/configuring/services/secrets), restricted telemetry, shared quotas and policy; deploy and verify. Enforce ownership in backend code rather than assuming client-facing Firestore Security Rules protect server SDK access.
+
+### Azure Functions implementation path
+
+1. Add HTTP-triggered handlers with [Entra authentication and application authorization](https://learn.microsoft.com/en-us/azure/azure-functions/security-concepts). Use [managed identities](https://learn.microsoft.com/en-us/azure/azure-functions/manage-connections) and separate Function Apps where identity isolation is needed; function keys alone do not identify document owners.
+2. Replace SQLite with Cosmos DB adapters. For the [transactional-batch path](https://learn.microsoft.com/en-us/azure/cosmos-db/transactional-batch), put documents, replay markers, outcomes and audit-outbox records in one logical partition. Use conditional version/ETag checks and create-only replay markers. Restrict grants to that partition or redesign storage before supporting cross-partition purge.
+3. Provision Key Vault permissions, shared counters, durable policy and audit delivery. Deploy with Bicep or Terraform and verify transaction/recovery behavior using SDK-based adapters.
+
+### Verify the cloud port
+
+Test wrong owners, invalid credentials, tampered events, expired/replaced grants and concurrent replay. Inject audit failures, retry committed operations, scale across instances and confirm shared quotas and policy revocation. Ordinary users must not access detailed telemetry or reset limits.
+
+Record cloud observations separately from `results/`. Port the experiments to actual invocation paths, identities, artifacts and rollouts; observe rather than assume instance reuse. Measure timing under a declared observer model and distinguish synthetic billing from actual charges. Local results do not transfer automatically to a cloud deployment.
+
+For another platform, use the same adapter boundaries and verify its runtime, transaction and identity semantics. A runtime without Python support needs a compatible container service or a rewrite. Budget alerts and concurrency controls do not guarantee a hard cap on all cloud charges.
 
 ## Tests and evidence verification
 
-Run the tests for the framework's workflow and supporting experiments:
+Run the existing tests:
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-Retained evidence includes hashes of source files, tests and documentation. After changing these files, regenerate the seven-experiment bundle before recording test outcomes and verifying it:
+The retained evidence hashes source, tests and documentation. After changing tracked evidence inputs, regenerate the bundle, record tests and verify it:
 
 ```bash
 PYTHONPATH=src python3 -m ssrsf evaluate --trials 30 --seed 42 --output results
@@ -200,16 +198,10 @@ python3 scripts/validate.py --python python3
 python3 scripts/check_evidence.py
 ```
 
-To record an additional installed interpreter, pass another `--python` argument to `scripts/validate.py`, for example:
-
-```bash
-python3 scripts/validate.py --python .venv/bin/python --python python3
-```
-
-`results/validation.json` binds interpreter versions and complete test logs to the retained source and results. `results/SHA256SUMS` binds the evidence files. Same-host compatibility checks do not establish independent replication.
+Repeat `--python` to validate additional installed interpreters. `results/validation.json` binds test logs to source/results; `results/SHA256SUMS` binds the evidence files. Same-host checks are not independent replication.
 
 ## Limits
 
-Serverless SRSF is an offline local reference framework with a controlled evaluation testbed. Its authorization checks operate within Python, its subprocess workspaces provide local execution separation, and its replica objects model partial updates in one process. Cloud IAM enforcement, hostile-code sandboxing and distributed deployment require platform infrastructure beyond this implementation. All markers and dependency artifacts are inert. Temporary experiment storage is disposable. Existing ignored `.ssrsf/` application data is preserved and unused.
+This is an offline reference implementation. Python roles, SQLite and the filesystem owner share a local trust boundary. Subprocess workspaces are not hostile-code sandboxes, replica objects are not distributed nodes, and markers/artifacts are inert. Existing ignored `.ssrsf/` data is preserved and unused.
 
-Platform-isolation comparisons, adversarial co-location, CPU/cache channels, provider scheduling, IAM convergence and real billing remain outside the evidence. Reliability measurements cover legitimate fixture completion and execution timing; production availability SLOs, error budgets and incident recovery are not evaluated.
+Cloud IAM enforcement, container escapes, adversarial co-location, CPU/cache channels, provider scheduling, real billing and distributed rollout safety remain outside the local evidence. Reliability measurements cover fixture completion and timing; production availability SLOs, error budgets and incident recovery are not evaluated.

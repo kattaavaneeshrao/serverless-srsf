@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "serverless-srsf"
 version = "1.3.0"
-description = "Local experiments for Marin et al.'s serverless security review"
+description = "Local document security framework with seven supporting experiments"
 requires-python = ">=3.11"
 dependencies = []
 

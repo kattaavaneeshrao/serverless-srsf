@@ -4,13 +4,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ssrsf.application import authorization, dependencies, events
-from ssrsf.billing import simulate, workload
+from ssrsf.experiments.application import authorization, dependencies, events
+from ssrsf.experiments.billing import simulate, workload
 from ssrsf.cli import main
 from ssrsf.controls import Rejected
 from ssrsf.evaluation import EXPERIMENTS, evaluate, summarize, write_bundle
-from ssrsf.infrastructure import persistence, rollouts, side_channels, timing_attack
-from ssrsf.runtime import FunctionProcess
+from ssrsf.evidence import source_hashes
+from ssrsf.experiments.infrastructure import persistence, rollouts, side_channels, timing_attack
+from ssrsf.experiments.runtime import FunctionProcess
 
 
 class ApplicationExperiments(unittest.TestCase):
@@ -121,6 +122,20 @@ class BillingExperiments(unittest.TestCase):
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_source_inventory_tracks_nested_code_changes_and_removals(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            module = root / "src/ssrsf/experiments/worker.py"
+            module.parent.mkdir(parents=True)
+            module.write_text("original fixture")
+            name = "src/ssrsf/experiments/worker.py"
+            original = source_hashes(root)
+            self.assertIn(name, original)
+            module.write_text("changed fixture")
+            self.assertNotEqual(source_hashes(root)[name], original[name])
+            module.unlink()
+            self.assertNotIn(name, source_hashes(root))
+
     def test_full_bundle_roundtrip_and_integrity(self):
         bundle = evaluate(trials=2)
         with tempfile.TemporaryDirectory() as directory:
@@ -130,6 +145,7 @@ class EvidenceTests(unittest.TestCase):
             self.assertEqual(len(loaded["experiments"]), len(EXPERIMENTS))
             self.assertIsNone(loaded["paper"]["numerical_reference_results"])
             self.assertTrue(loaded["source_sha256"])
+            self.assertIn("src/ssrsf/experiments/worker.py", loaded["source_sha256"])
             for line in (root / "SHA256SUMS").read_text().splitlines():
                 digest, name = line.split("  ")
                 self.assertEqual(hashlib.sha256((root / name).read_bytes()).hexdigest(), digest)

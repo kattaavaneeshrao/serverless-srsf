@@ -7,7 +7,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from .controls import (AccessControl, Identity, Rejected, accept_event, inventory,
+from ..controls import (AccessControl, Identity, Rejected, accept_event, inventory,
                        sign_event, verify_inventory)
 
 

@@ -80,29 +80,3 @@ def verify_inventory(root: Path, expected: dict[str, str]) -> bool:
         return inventory(root) == expected
     except (OSError, Rejected):
         return False
-
-
-@dataclass(frozen=True)
-class Version:
-    name: str
-    readers: frozenset[str]
-
-
-class LocalRollout:
-    """Replica objects for demonstrating the paper's partial-update race."""
-    def __init__(self, replicas=4):
-        self.replicas = [Version("v1", frozenset({"retired", "active"}))] * replicas
-        self.generation = 1
-
-    def update(self, first_replica_only=False):
-        replacement = Version("v2", frozenset({"active"}))
-        if first_replica_only:
-            self.replicas[0] = replacement
-        else:
-            self.replicas = [replacement] * len(self.replicas)
-        self.generation = 2
-
-    def invoke(self, replica: int, subject: str):
-        version = self.replicas[replica]
-        return {"version": version.name, "allowed": subject in version.readers,
-                "generation": self.generation}

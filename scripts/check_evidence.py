@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 from ssrsf.evaluation import EXPERIMENTS
+from ssrsf.evidence import source_hashes
 
 
 def main():
@@ -26,11 +27,7 @@ def main():
     bundle = json.loads((evidence / 'results.json').read_text())
     if tuple(bundle['experiments']) != EXPERIMENTS:
         raise ValueError('Retained experiments do not match the current paper scope')
-    paths = [*ROOT.glob('src/ssrsf/*.py'), *ROOT.glob('tests/*.py'),
-             *ROOT.glob('scripts/*.py'), *ROOT.glob('research/*'),
-             ROOT / 'pyproject.toml', ROOT / 'README.md', ROOT / 'SECURITY.md']
-    current = {p.relative_to(ROOT).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
-               for p in sorted(paths) if p.is_file()}
+    current = source_hashes(ROOT)
     if current != bundle['source_sha256']:
         raise ValueError('Source inventory changed; regenerate evaluation and validation')
     validation = json.loads((evidence / 'validation.json').read_text())

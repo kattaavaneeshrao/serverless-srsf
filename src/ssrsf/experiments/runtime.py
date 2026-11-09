@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .controls import inventory
+from ..controls import inventory
 
 
 class FunctionProcess:
