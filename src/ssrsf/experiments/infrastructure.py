@@ -21,12 +21,15 @@ class Version:
 
 class LocalRollout:
     """Replica objects for demonstrating the paper's partial-update race."""
-    def __init__(self, replicas=4):
+    def __init__(self, replicas=4, enforce_current_policy=False):
         self.replicas = [Version("v1", frozenset({"retired", "active"}))] * replicas
+        self.enforce_current_policy = enforce_current_policy
+        self.current_readers = frozenset({"retired", "active"})
         self.generation = 1
 
     def update(self, first_replica_only=False):
-        replacement = Version("v2", frozenset({"active"}))
+        self.current_readers = frozenset({"active"})
+        replacement = Version("v2", self.current_readers)
         if first_replica_only:
             self.replicas[0] = replacement
         else:
@@ -35,7 +38,8 @@ class LocalRollout:
 
     def invoke(self, replica: int, subject: str):
         version = self.replicas[replica]
-        return {"version": version.name, "allowed": subject in version.readers,
+        return {"version": version.name, "allowed": subject in version.readers and (
+                    not self.enforce_current_policy or subject in self.current_readers),
                 "generation": self.generation}
 
 
@@ -77,15 +81,22 @@ def persistence(trials, seed):
             "observations": rows}
 
 
-def _workflow(role: str):
+def _workflow(role: str, protected=False):
     start = time.perf_counter_ns()
-    trace = ["authenticate"]
-    if role == "admin":
-        trace.extend(["F2", "F3"])
+    if protected:
+        # Execute the same schedule for both roles. No role-dependent work or
+        # internal branch names cross the observer boundary.
+        trace = ["authenticate", "process", "complete"]
+        time.sleep(.001)
         time.sleep(.003)
     else:
-        trace.extend(["F4", "F5"])
-        time.sleep(.001)
+        trace = ["authenticate"]
+        if role == "admin":
+            trace.extend(["F2", "F3"])
+            time.sleep(.003)
+        else:
+            trace.extend(["F4", "F5"])
+            time.sleep(.001)
     return {"role": role, "trace": trace,
             "latency_ms": (time.perf_counter_ns() - start) / 1e6}
 
@@ -104,27 +115,30 @@ def timing_attack(train: list[dict], test: list[dict]) -> dict:
 
 def side_channels(trials, seed):
     rng, rows = random.Random(seed), []
-    for split in ("train", "test"):
-        schedule = [(trial, role) for trial in range(trials) for role in ("user", "admin")]
-        rng.shuffle(schedule)
-        for trial, role in schedule:
-            rows.append({"trial": trial, "split": split, "variant": "exposed", **_workflow(role)})
-    train = [r for r in rows if r["split"] == "train"]
-    test = [r for r in rows if r["split"] == "test"]
-    mapping = {}
-    for trace in {tuple(r["trace"]) for r in train}:
-        subset = [r for r in train if tuple(r["trace"]) == trace]
-        mapping[trace] = "admin" if sum(r["role"] == "admin" for r in subset) > len(subset) / 2 else "user"
-    correct = sum(mapping.get(tuple(r["trace"]), "user") == r["role"] for r in test)
-    metrics = {"exposed": {"timing_attacker": timing_attack(train, test),
-                           "trace_attacker_accuracy": proportion(correct, len(test)),
-                           "latency": latency([r["latency_ms"] for r in test])}}
+    metrics = {}
+    for variant in ("exposed", "uniform-workflow"):
+        for split in ("train", "test"):
+            schedule = [(trial, role) for trial in range(trials) for role in ("user", "admin")]
+            rng.shuffle(schedule)
+            for trial, role in schedule:
+                rows.append({"trial": trial, "split": split, "variant": variant,
+                             **_workflow(role, protected=variant == "uniform-workflow")})
+        train = [r for r in rows if r["split"] == "train" and r["variant"] == variant]
+        test = [r for r in rows if r["split"] == "test" and r["variant"] == variant]
+        mapping = {}
+        for trace in {tuple(r["trace"]) for r in train}:
+            subset = [r for r in train if tuple(r["trace"]) == trace]
+            mapping[trace] = "admin" if sum(r["role"] == "admin" for r in subset) > len(subset) / 2 else "user"
+        correct = sum(mapping.get(tuple(r["trace"]), "user") == r["role"] for r in test)
+        metrics[variant] = {"timing_attacker": timing_attack(train, test),
+                            "trace_attacker_accuracy": proportion(correct, len(test)),
+                            "latency": latency([r["latency_ms"] for r in test])}
     return {"paper_pages": "9–10, Figure 2", "kind": "local workflow information-exposure demonstration",
-            "hypothesis": "Branch-specific traces and response timing can reveal the caller's role.",
+            "hypothesis": "Uniform traces and role-independent work remove the constructed branch leak.",
             "observer": "Observer is assumed to see function trace names and total response time.",
             "metrics": metrics,
-            "limits": ["Threat demonstration only; the review specifies no workflow side-channel defense.",
-                       "Service delays (user 1 ms, admin 3 ms) are constructed; wall-clock times are measured.",
+            "limits": ["Uniform-workflow is a project-specific defense, not a countermeasure specified by the review.",
+                       "Exposed delays are user 1 ms/admin 3 ms; protected calls both execute 1 ms then 3 ms. Real elapsed times are retained; scheduling noise can affect inference.",
                        "Training and test calls are disjoint, balanced and randomized.",
                        "Inference accuracy depends on this host and the limited tested attacker.",
                        "No shared-host CPU/cache channel or real cloud trace access is evaluated."],
@@ -134,23 +148,26 @@ def side_channels(trials, seed):
 def rollouts(trials, seed):
     rng, rows = random.Random(seed), []
     for trial in range(trials):
-        deployment = LocalRollout()
-        start = time.perf_counter_ns()
-        deployment.update(first_replica_only=True)
-        replica_order = list(range(4))
-        rng.shuffle(replica_order)
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            calls = list(executor.map(lambda replica: deployment.invoke(replica, "retired"), replica_order))
-            legitimate = list(executor.map(lambda replica: deployment.invoke(replica, "active"), replica_order))
-        rows.append({"trial": trial, "variant": "rolling-stale-replicas", "attack": True,
-                     "case": "revocation-with-stale-replicas", "calls": calls,
-                     "attack_succeeded": any(c["allowed"] for c in calls),
-                     "stale_allows": sum(c["allowed"] for c in calls),
-                     "legitimate_succeeded": all(c["allowed"] for c in legitimate),
-                     "latency_ms": (time.perf_counter_ns() - start) / 1e6})
+        variants = ["rolling-stale-replicas", "current-policy-gate"]
+        rng.shuffle(variants)
+        for variant in variants:
+            deployment = LocalRollout(enforce_current_policy=variant == "current-policy-gate")
+            start = time.perf_counter_ns()
+            deployment.update(first_replica_only=True)
+            replica_order = list(range(4))
+            rng.shuffle(replica_order)
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                calls = list(executor.map(lambda replica: deployment.invoke(replica, "retired"), replica_order))
+                legitimate = list(executor.map(lambda replica: deployment.invoke(replica, "active"), replica_order))
+            rows.append({"trial": trial, "variant": variant, "attack": True,
+                         "case": "revocation-with-stale-replicas", "calls": calls,
+                         "attack_succeeded": any(c["allowed"] for c in calls),
+                         "stale_allows": sum(c["allowed"] for c in calls),
+                         "legitimate_succeeded": all(c["allowed"] for c in legitimate),
+                         "latency_ms": (time.perf_counter_ns() - start) / 1e6})
     return {"paper_pages": "10", "kind": "concurrent calls to a partially updated local replica pool",
-            "hypothesis": "Partial updates leave revoked access reachable through stale replicas.",
-            "limits": ["Threat demonstration only; the review does not specify a rollout defense.",
+            "hypothesis": "A current-policy admission gate rejects revoked readers even on stale replicas.",
+            "limits": ["The project-specific gate assumes a trusted current policy shared by every invocation; this is not distributed consensus.",
                        "Four replica objects share one process; they are not distributed nodes.",
                        "The stale-version window is intentionally forced, not measured in production.",
                        "No provider convergence or cloud availability claim."],

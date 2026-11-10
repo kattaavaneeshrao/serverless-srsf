@@ -134,15 +134,17 @@ Guided evaluation prompts for experiments, trials (2–200), seed, modeled invoc
 | Authorization | Per-function capabilities versus gateway-only checks | Section 6, pp. 8–9 |
 | Dependencies | Hash inventories rejecting changed or unlisted files | Section 6, p. 9 |
 | Persistence | Scratch marker survival with reuse, monitoring or fresh workspaces | Section 6, pp. 10–11; reuse p. 8 |
-| Side channels | Role inference from traces and timing; threat demonstration | Section 6, pp. 9–10, Figure 2 |
-| Rollouts | Revoked access through deliberately stale replicas; threat demonstration | Section 6, p. 10 |
-| Billing | Uncontrolled dispatch, spending alerts and fixed quotas | Section 6, p. 11 |
+| Side channels | Role inference with exposed versus uniform traces and work schedules | Section 6, pp. 9–10, Figure 2 |
+| Rollouts | Revoked access through stale replicas, with and without a current-policy gate | Section 6, p. 10 |
+| Billing | Uncontrolled dispatch, alerts, quotas and authorization before dispatch | Section 6, p. 11 |
 
 Read the [measured report](results/report.md) for findings and limitations. [results.json](results/results.json) contains observations, configuration, host details and source hashes; [metrics.csv](results/metrics.csv) contains aggregates. The [methodology](research/methodology.md) includes protocols and the [workflow-to-paper mapping](research/methodology.md#document-workflow-mapped-to-the-paper); [article.json](research/article.json) records the source PDF’s identity.
 
 The paper is a review; the event schema, HMAC, artifact inventory, audit chain, approval protocol and quota settings are this project’s engineering choices. HMAC provides shared-key integrity, not replay protection. Artifact hashes detect changes, not dependency vulnerabilities.
 
-Rates and descriptive 95% Wilson intervals apply to constructed fixtures. Side-channel delays and stale replicas are deliberately configured. Billing uses synthetic time buckets and arbitrary cost units: alerts do not reject work, quotas can reject legitimate bursts, and low-rate attacks can pass both. These results do not establish real-world attack prevalence, provider behavior or cloud costs.
+Every experiment includes a protected variant alongside its vulnerable comparison. Side channels use uniform public traces and the same work schedule for both roles; timing inference is measured, not assumed eliminated. Rollouts check the current reader policy on every invocation, including calls to stale replicas. Billing's `authenticated-quota` variant verifies credentials and exact invoke permission before metered dispatch, then applies the 20-call bucket cap. Forged, revoked and read-only fixture credentials are rejected even at low rates; valid invoke credentials can still be abused.
+
+Rates and descriptive 95% Wilson intervals apply to constructed fixtures. Side-channel delays and stale replicas are deliberately configured. Billing uses synthetic time buckets and arbitrary cost units: alerts do not reject work, quotas can reject legitimate bursts, and low-rate attacks can pass both without the authorization gate. Rejection does not eliminate authentication or infrastructure costs. These results do not establish real-world attack prevalence, provider behavior or cloud costs.
 
 ## Implementing on serverless platforms
 

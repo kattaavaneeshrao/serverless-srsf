@@ -93,9 +93,9 @@ def render_report(bundle):
             for variant, metric in experiment["metrics"].items():
                 t = metric["latency"]
                 lines.append(f'| {variant} | {_rate(metric["trace_attacker_accuracy"])} | {_rate(metric["timing_attacker"]["held_out_accuracy"])} | {t["p50_ms"]:.3f} / {t["p95_ms"]:.3f} |')
-            lines += ["", "This experiment demonstrates the Figure 2 threat. It does not introduce a defense.", ""]
+            lines += ["", "Uniform-workflow hides branch names and executes the same schedule for both roles. Timing remains a measured inference result, not a guarantee against all side channels.", ""]
         elif name == "billing":
-            lines += ["Cost units are modeled, not currency. Rows show means across paired trials. Alert recall/FPR compare fixed spending alerts with attack-labeled post-warmup buckets; they do not measure production accuracy. Uncontrolled and fixed-quota variants have no detector.", "",
+            lines += ["Cost units are modeled, not currency. Rows show means across paired trials. Alert recall/FPR compare fixed spending alerts with attack-labeled post-warmup buckets; they do not measure production accuracy. Only alert-only emits spending alerts; admission rejection is measured separately.", "",
                       "| Workload | Variant | Attack calls accepted | Legitimate calls rejected | Modeled spend | Alert recall | False alert rate | Mean alert delay (min) |", "|---|---|---:|---:|---:|---:|---:|---:|"]
             for case in sorted({r["case"] for r in experiment["observations"]}):
                 for variant in sorted(experiment["summary"]):
@@ -110,7 +110,7 @@ def render_report(bundle):
                     delays = [r["alert_delay_minutes"] for r in rows if r["alert_delay_minutes"] is not None]
                     delay = f"{statistics.mean(delays):.2f}" if delays else "none"
                     lines.append(f'| {case} | {variant} | {mean("accepted_attack"):.1f} | {mean("rejected_legitimate"):.1f} | {mean("modeled_spend"):.6f} | {recall} | {fpr} | {delay} |')
-            lines += ["", "Alert-only has the same cost as uncontrolled dispatch. Spending alerts do not enforce a cap or classify requests. Fixed quotas can reject legitimate bursts; low-rate attacks may remain below both limits.", ""]
+            lines += ["", "Alert-only has the same cost as uncontrolled dispatch. Spending alerts do not enforce a cap or classify requests. Fixed quotas can reject legitimate bursts; low-rate attacks may remain below both limits. Authenticated-quota rejects unauthorized invocations before dispatch, including low-rate attempts, while retaining the cap for authorized demand.", ""]
         else:
             lines += ["| Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |", "|---|---|---|---|"]
             for variant, metric in experiment["summary"].items():

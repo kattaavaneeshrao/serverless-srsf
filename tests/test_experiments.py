@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from ssrsf.experiments.application import authorization, dependencies, events
 from ssrsf.experiments.billing import simulate, workload
@@ -10,7 +11,7 @@ from ssrsf.cli import main
 from ssrsf.controls import Rejected
 from ssrsf.evaluation import EXPERIMENTS, evaluate, summarize, write_bundle
 from ssrsf.evidence import source_hashes
-from ssrsf.experiments.infrastructure import persistence, rollouts, side_channels, timing_attack
+from ssrsf.experiments.infrastructure import LocalRollout, _workflow, persistence, rollouts, side_channels, timing_attack
 from ssrsf.experiments.runtime import FunctionProcess
 
 
@@ -67,6 +68,27 @@ class InfrastructureExperiments(unittest.TestCase):
             self.assertEqual(len(train), len(test))
             self.assertEqual(sum(r["role"] == "admin" for r in test), 3)
 
+    def test_uniform_workflow_has_no_role_dependent_trace_or_schedule(self):
+        result = side_channels(3, 42)
+        self.assertEqual(result["metrics"]["uniform-workflow"]["trace_attacker_accuracy"]["rate"], .5)
+        schedules = []
+        for role in ("user", "admin"):
+            with patch("ssrsf.experiments.infrastructure.time.sleep") as sleep:
+                response = _workflow(role, protected=True)
+                schedules.append((response["trace"], sleep.call_args_list))
+        self.assertEqual(schedules[0], schedules[1])
+        self.assertEqual(schedules[0][0], ["authenticate", "process", "complete"])
+
+    def test_current_policy_blocks_direct_stale_replica_access(self):
+        deployment = LocalRollout(enforce_current_policy=True)
+        self.assertTrue(deployment.invoke(3, "retired")["allowed"])
+        deployment.update(first_replica_only=True)
+        for replica in range(4):
+            self.assertFalse(deployment.invoke(replica, "retired")["allowed"])
+            self.assertFalse(deployment.invoke(replica, "unknown")["allowed"])
+            self.assertTrue(deployment.invoke(replica, "active")["allowed"])
+        self.assertEqual(deployment.invoke(3, "active")["version"], "v1")
+
     def test_timing_fit_does_not_use_test_labels(self):
         train = [{"role": "user", "latency_ms": 1}, {"role": "admin", "latency_ms": 3}]
         test = [{"role": "admin", "latency_ms": 2.5}, {"role": "user", "latency_ms": 1.5}]
@@ -79,10 +101,11 @@ class InfrastructureExperiments(unittest.TestCase):
 
     def test_partial_update_exposes_three_stale_replicas(self):
         result = rollouts(3, 42)
-        self.assertEqual(set(summarize(result)), {"rolling-stale-replicas"})
+        self.assertEqual(set(summarize(result)), {"rolling-stale-replicas", "current-policy-gate"})
         for row in result["observations"]:
-            self.assertTrue(row["attack_succeeded"])
-            self.assertEqual(row["stale_allows"], 3)
+            protected = row["variant"] == "current-policy-gate"
+            self.assertEqual(row["attack_succeeded"], not protected)
+            self.assertEqual(row["stale_allows"], 0 if protected else 3)
             self.assertTrue(row["legitimate_succeeded"])
 
 
@@ -113,6 +136,34 @@ class BillingExperiments(unittest.TestCase):
         for row in result.values():
             self.assertEqual(row["accepted_attack"], 50)
             self.assertIsNone(row["alert_delay_minutes"])
+
+    def test_authenticated_quota_blocks_all_unauthorized_workloads(self):
+        import random
+        for case in ("steady", "legitimate-burst", "sustained-attack", "low-rate-attack", "slow-ramp"):
+            with self.subTest(case=case):
+                trace = workload(case, random.Random(42))
+                result = simulate(trace, "authenticated-quota", .001)
+                self.assertEqual(result["accepted_attack"], 0)
+                self.assertEqual(result["auth_rejections"], sum(r["offered_attack"] for r in result["buckets"]))
+                self.assertEqual(result["rejected_legitimate"] > 0, case == "legitimate-burst")
+                self.assertTrue(all(r["accepted_legitimate"] <= 20 for r in result["buckets"]))
+
+    def test_admission_uses_credentials_and_not_hidden_labels(self):
+        requests = [{"credential": credential, "attack": label}
+                    for credential, label in (("customer-token", True), ("forged-token", False),
+                                              ("reader-token", False), ("revoked-token", False))]
+        result = simulate([requests], "authenticated-quota", .001)
+        self.assertEqual(result["dispatch_count"], 1)
+        self.assertEqual(result["accepted_attack"], 1)  # Valid invoke credentials can be abused.
+        self.assertEqual(result["rejected_legitimate"], 3)
+        swapped = simulate([[{**r, "attack": not r["attack"]} for r in requests]], "authenticated-quota", .001)
+        self.assertEqual(result["dispatch_checksum"], swapped["dispatch_checksum"])
+        self.assertEqual(result["dispatch_count"], swapped["dispatch_count"])
+        # Rejections cannot consume the authorized customer's quota.
+        flood = [{"credential": "forged-token", "attack": True}] * 100 + [requests[0]] * 21
+        limited = simulate([flood], "authenticated-quota", .001)
+        self.assertEqual(limited["dispatch_count"], 20)
+        self.assertEqual(limited["auth_rejections"], 100)
 
     def test_fixed_quota_has_no_detector(self):
         result = self.run_trace("sustained-attack")["fixed-quota"]
