@@ -579,7 +579,7 @@ Rates and descriptive 95% Wilson intervals apply to constructed fixtures. Side-c
 
 ## Architecture and deployment scope
 
-The container prototype follows Kalium's separation of application code from enforcement: workers request operations through a trusted guard and controller. [Kalium](https://www.usenix.org/conference/usenixsecurity23/presentation/jegan) additionally enforces local/global communication graphs inside a modified gVisor runtime. Our prototype implements a fixed service-level stage graph and durable task grants. It does not reproduce Kalium's syscall or TLS interception, and we have no comparative performance result.
+The container prototype separates processing from enforcement: workers request operations through a trusted guard and controller. The controller enforces a fixed document-stage graph, issues durable task grants and records transitions with their outcomes and audit evidence. The implemented boundary is service-level workflow enforcement; syscall and TLS interception are outside the evaluated scope.
 
 | Property | Local `ReferenceApp` | Container prototype |
 |---|---|---|
@@ -605,7 +605,7 @@ The recorded Python validation contains **95 passing tests**, including ten cont
 - Five submitted workflows completed under a smoke load of up to four concurrent clients. The observed median was approximately **1.176 seconds** for that run.
 - A completed workflow kept its version, text and classification after a controller restart.
 
-These single-host observations are separate from the seven-experiment bundle. They are not a scalability study, a general egress guarantee or a comparison with Kalium. Run `check` and `load` to repeat the live checks; quota usage and host scheduling can affect results. CI includes a separate `container-prototype` job for these commands.
+These single-host observations are separate from the seven-experiment bundle. They are not a scalability study, a general egress guarantee or a comparative performance study. Run `check` and `load` to repeat the live checks; quota usage and host scheduling can affect results. CI includes a separate `container-prototype` job for these commands.
 
 ## Tests and evidence verification
 
