@@ -80,15 +80,49 @@ def _interactive(defaults=None):
                               experiment=selected, output=output)
 
 
+def _run_evaluation(args):
+    if not getattr(args, "non_interactive", False):
+        print(f"Running {len(args.experiment)} experiments with {args.trials} trials per case…")
+    bundle = evaluate(args.trials, args.seed, args.unit_price, args.experiment or EXPERIMENTS)
+    write_bundle(bundle, args.output)
+    print(f"Completed {len(bundle['experiments'])} local experiments. Report: {args.output / 'report.md'}")
+    return 0
+
+
+def _activity_menu():
+    while True:
+        print("\nServerless SRSF")
+        print("  1. Document workflow\n  2. Experiments\n  3. Quit")
+        try:
+            choice = _prompt("Choose an activity", 1, lambda value: _integer(value, 1, 3))
+            if choice == 3:
+                return 0
+            if choice == 1:
+                from .prototype.client import interactive, start_services
+                print("Preparing document services…")
+                start_services(reuse=True)
+                interactive("http://127.0.0.1:8080", return_to_main=True)
+            else:
+                _run_evaluation(_interactive())
+        except EOFError:
+            print("\nSession ended. Document services keep running if already started.")
+            return 0
+        except KeyboardInterrupt:
+            print("\nActivity cancelled. Returning to the main menu.")
+        except (ValueError, OSError, RuntimeError) as exc:
+            print(f"ssrsf: {exc}", file=sys.stderr)
+
+
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog="ssrsf", description="Reusable local document security workflow and evaluation of selected recommendations in Marin et al. (2022)")
+    parser = argparse.ArgumentParser(prog="ssrsf", description="Interactive document workflow with Docker isolation and seven local security experiments")
     def workflow_options(target):
         source = target.add_mutually_exclusive_group()
-        source.add_argument("--text", help="Process this text and print the stored document")
-        source.add_argument("--file", type=Path, help="Process a UTF-8 text file")
-        target.add_argument("--state", type=Path, help="Keep document workflow state across runs")
+        source.add_argument("--text", help="Process text with the local reference implementation (no Docker)")
+        source.add_argument("--file", type=Path, help="Process a UTF-8 file with the local reference implementation")
+        target.add_argument("--state", type=Path, help="Keep local reference state across runs")
 
     workflow_options(parser)
+    parser.add_argument("--local", action="store_true", help=argparse.SUPPRESS)
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("interactive", help="Choose evaluation settings through guided prompts")
     run = commands.add_parser("evaluate", help="Run paired local experiments and write measured evidence")
@@ -101,27 +135,13 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.command is None:
-            from .console import run as run_console
-            if args.text is not None or args.file is not None:
+            if args.local or args.text is not None or args.file is not None or args.state is not None:
+                from .console import run as run_console
                 return run_console(args)
-            print("Serverless SRSF")
-            print("  1. Document workflow\n  2. Guided experiments\n  3. Quit")
-            try:
-                choice = _prompt("Choose an activity", 1, lambda value: _integer(value, 1, 3))
-            except (EOFError, KeyboardInterrupt):
-                print("\nSession ended.")
-                return 0
-            if choice == 3:
-                return 0
-            if choice == 1:
-                return run_console(args)
-            args = _interactive()
+            return _activity_menu()
         elif args.command == "interactive" or not args.non_interactive:
             args = _interactive(args if args.command == "evaluate" else None)
-        if not getattr(args, "non_interactive", False):
-            print(f"Running {len(args.experiment)} experiments with {args.trials} trials per case…")
-        bundle = evaluate(args.trials, args.seed, args.unit_price, args.experiment or EXPERIMENTS)
-        write_bundle(bundle, args.output)
+        return _run_evaluation(args)
     except EOFError:
         print("\nInput ended; evaluation cancelled.", file=sys.stderr)
         return 1
@@ -131,5 +151,3 @@ def main(argv=None):
     except (ValueError, OSError, RuntimeError) as exc:
         print(f"ssrsf: {exc}", file=sys.stderr)
         return 1
-    print(f"Completed {len(bundle['experiments'])} local experiments. Report: {args.output / 'report.md'}")
-    return 0

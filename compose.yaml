@@ -1,0 +1,82 @@
+name: srsf-prototype
+
+x-service: &service
+  build: .
+  image: srsf-prototype:local
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 64
+  mem_limit: 128m
+  cpus: 0.5
+  restart: unless-stopped
+  init: true
+
+services:
+  controller:
+    <<: *service
+    command: [controller]
+    networks: [control]
+    volumes: [state:/state]
+    secrets: [controller, audit]
+    healthcheck: &health
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  guard:
+    <<: *service
+    command: [guard]
+    networks: [edge, control, ingest_net, extract_net, classify_net]
+    ports: ["127.0.0.1:8080:8080"]
+    secrets: [controller, client, ingest, extract, classify]
+    depends_on:
+      controller:
+        condition: service_healthy
+    healthcheck: *health
+  ingest:
+    <<: *service
+    command: [ingest]
+    networks: [ingest_net]
+    secrets: [ingest]
+    depends_on: &guard_ready
+      guard:
+        condition: service_healthy
+  extract:
+    <<: *service
+    command: [extract]
+    networks: [extract_net]
+    secrets: [extract]
+    depends_on: *guard_ready
+  classify:
+    <<: *service
+    command: [classify]
+    networks: [classify_net]
+    secrets: [classify]
+    depends_on: *guard_ready
+
+networks:
+  edge:
+  control:
+    internal: true
+  ingest_net:
+    internal: true
+  extract_net:
+    internal: true
+  classify_net:
+    internal: true
+volumes:
+  state:
+secrets:
+  controller:
+    file: .prototype/secrets/controller
+  audit:
+    file: .prototype/secrets/audit
+  client:
+    file: .prototype/secrets/client
+  ingest:
+    file: .prototype/secrets/ingest
+  extract:
+    file: .prototype/secrets/extract
+  classify:
+    file: .prototype/secrets/classify

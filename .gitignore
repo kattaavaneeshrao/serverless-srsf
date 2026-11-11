@@ -10,3 +10,4 @@ dist/
 .env
 ci-results/
 results-*/
+.prototype/
