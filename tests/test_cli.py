@@ -11,6 +11,28 @@ from ssrsf.evaluation import EXPERIMENTS
 
 
 class InteractiveCLI(unittest.TestCase):
+    def test_reference_commands_use_the_docker_client_and_selected_identity(self):
+        with patch("ssrsf.reference.ReferenceApp") as app, contextlib.redirect_stdout(io.StringIO()) as output:
+            app.return_value.report.return_value = {"classifications": {"short": 2}}
+            self.assertEqual(main(["reference", "--identity", "admin", "report"]), 0)
+        app.assert_called_once_with("http://127.0.0.1:8080", identity="admin")
+        app.return_value.report.assert_called_once_with()
+        self.assertIn('"short": 2', output.getvalue())
+
+    def test_reference_command_failures_are_reported_without_traceback(self):
+        with patch("ssrsf.reference.ReferenceApp", side_effect=RuntimeError("Service unavailable")), \
+                contextlib.redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(main(["reference", "report"]), 1)
+        self.assertIn("Service unavailable", error.getvalue())
+
+    def test_removed_reference_flags_are_rejected(self):
+        for args in (["--local"], ["--text", "hello"], ["--file", "demo.txt"], ["--state", "/tmp/old-state"]):
+            with self.subTest(args=args), patch("ssrsf.prototype.client.start_services") as start, \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+                main(args)
+            self.assertEqual(error.exception.code, 2)
+            start.assert_not_called()
+
     def test_default_menu_runs_guided_experiments(self):
         with patch("builtins.input", side_effect=["invalid", "2", *([""] * 5), "3"]), \
                 patch("ssrsf.cli.evaluate", return_value={"experiments": {}}) as evaluate, \
@@ -22,23 +44,19 @@ class InteractiveCLI(unittest.TestCase):
     def test_default_menu_can_quit_without_starting_work(self):
         with patch("builtins.input", return_value="3"), \
                 patch("ssrsf.cli.evaluate") as evaluate, \
-                patch("ssrsf.console.run") as console, \
                 contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(main([]), 0)
         evaluate.assert_not_called()
-        console.assert_not_called()
 
     def test_document_mode_starts_containers_and_returns_to_main_menu(self):
         with patch("builtins.input", side_effect=["1", "3"]), \
                 patch("ssrsf.prototype.client.start_services") as start, \
                 patch("ssrsf.prototype.client.interactive") as documents, \
-                patch("ssrsf.console.run") as local, \
                 patch("ssrsf.cli.evaluate") as experiments, \
                 contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(main([]), 0)
         start.assert_called_once_with(reuse=True)
         documents.assert_called_once_with("http://127.0.0.1:8080", return_to_main=True)
-        local.assert_not_called()
         experiments.assert_not_called()
 
     def test_docker_failure_keeps_experiments_available(self):

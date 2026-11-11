@@ -9,6 +9,9 @@ from pathlib import Path
 
 from .store import Denied, STAGES, WorkflowStore, exact
 from .transport import RemoteError, request, server
+from .reference import CLIENTS, DOCUMENT_CLIENTS
+from .integrity import verify_image
+from ssrsf.controls import inventory
 
 
 def secret(name):
@@ -24,11 +27,19 @@ def controller_dispatch(store):
             raise Denied("Guard required")
         exact(body, ("actor", "request"))
         actor, payload = body["actor"], body["request"]
-        if actor == "client":
+        if actor in DOCUMENT_CLIENTS:
             if path == "/submit":
                 return store.submit(actor, payload)
             if path == "/status":
                 return store.status(actor, payload)
+            if path == "/replace":
+                return store.replace(actor, payload)
+        if actor in CLIENTS:
+            operations = {"/approve": store.approve, "/purge": store.purge, "/investigate": store.investigate,
+                          "/report": store.report, "/budget": store.budget, "/telemetry": store.telemetry,
+                          "/audit": store.audit_status, "/deploy": store.deploy}
+            if path in operations:
+                return operations[path](actor, payload)
         if actor in STAGES:
             if path == "/claim":
                 return store.claim(actor, payload)
@@ -40,7 +51,9 @@ def controller_dispatch(store):
 
 def guard_dispatch(controller_url, controller_token):
     def dispatch(identity, path, body):
-        if identity == "client" and path in ("/submit", "/status"):
+        if identity in DOCUMENT_CLIENTS and path in ("/submit", "/status", "/replace"):
+            pass
+        elif identity in CLIENTS and path in ("/approve", "/purge", "/investigate", "/report", "/budget", "/telemetry", "/audit", "/deploy"):
             pass
         elif identity in STAGES and path in ("/claim", "/complete"):
             pass
@@ -66,7 +79,9 @@ def run_worker(stage):
     token = secret(stage)
     while True:
         try:
-            task = request(url + "/claim", token, {})["task"]
+            verify_image()
+            scratch = Path("/scratch")
+            task = request(url + "/claim", token, {"scratch": inventory(scratch)})["task"]
             if task is None:
                 time.sleep(0.25)
                 continue
@@ -74,10 +89,13 @@ def run_worker(stage):
                 raise RuntimeError("Task scope or input digest mismatch")
             completion = {k: task[k] for k in ("id", "version", "input_hash", "token")}
             completion["output"] = transform(stage, task["value"])
+            (scratch / "cache.txt").write_text("bounded application cache")
+            completion["scratch"] = inventory(scratch)
             # Retry identical completion after a lost response; the controller returns
             # the durable outcome. A worker crash is recovered through lease expiry.
             while True:
                 try:
+                    verify_image()
                     request(url + "/complete", token, completion)
                     break
                 except RemoteError as exc:
@@ -93,6 +111,7 @@ def main():
     parser.add_argument("role", choices=("controller", "guard", *STAGES))
     parser.add_argument("--port", type=int, default=8080)
     args = parser.parse_args()
+    verify_image()
     if args.role in STAGES:
         run_worker(args.role)
         return
@@ -103,8 +122,12 @@ def main():
         credentials = {"guard": secret("controller")}
     else:
         dispatch = guard_dispatch(os.environ.get("SRSF_CONTROLLER", "http://controller:8080"), secret("controller"))
-        credentials = {name: secret(name) for name in ("client", *STAGES)}
-    server(("0.0.0.0", args.port), dispatch, credentials).serve_forever()
+        credentials = {name: secret(name) for name in (*CLIENTS, *STAGES)}
+    operation = dispatch
+    def verified_dispatch(identity, path, body):
+        verify_image()
+        return operation(identity, path, body)
+    server(("0.0.0.0", args.port), verified_dispatch, credentials).serve_forever()
 
 
 if __name__ == "__main__":

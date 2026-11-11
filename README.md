@@ -4,11 +4,10 @@ Serverless SRSF provides one interactive menu for an isolated document workflow 
 
 The implementation includes:
 
-- **A reusable application:** ingest → extract → classify, guarded by event validation, ownership checks, artifact integrity, audit logging, approved deletion, policy enforcement and invocation quotas.
 - **Seven supporting experiments:** controlled comparisons and threat demonstrations covering events, authorization, dependencies, persistence, side channels, rollouts and billing.
-- **A container workflow prototype:** separate stage workers, an authenticated guard and a transactional workflow controller in Docker Compose.
+- **The Docker reference app:** separate stage workers, an authenticated guard and a transactional workflow controller in Docker Compose.
 
-The original application and experiments run locally with Python 3.11+ and the standard library. A separate [container workflow prototype](#container-workflow-prototype) adds isolated workers, a mandatory guard and a durable controller using Docker Compose. The delivered deployment uses Docker Compose on one host; cloud adapters and infrastructure are not included. The seven experiments measure individual behaviors, not the integrated framework’s end-to-end effectiveness or the container prototype.
+The experiments run locally with Python 3.11+ and the standard library. The [document workflow](#docker-reference-app) uses isolated workers, a mandatory guard and a durable controller in Docker Compose. The delivered deployment uses Docker Compose on one host; cloud adapters and infrastructure are not included. The seven experiments measure individual behaviors, not the integrated framework’s end-to-end effectiveness or the reference app.
 
 ## Quick start
 
@@ -79,7 +78,7 @@ Workflow ID [last submission]:
 
 Choose **0**. From the main menu, choose **2** for experiments or **3** to quit. Services keep running. To stop them, run `docker compose down` in a terminal; stored workflows and credentials are preserved.
 
-## Container workflow prototype
+## Docker reference app
 
 Requirements: Python 3.11+, Docker Engine/Desktop running Linux containers, and Docker Compose v2+. No Python packages beyond the standard library are needed. Run from the repository root:
 
@@ -125,103 +124,27 @@ The three workers each occupy a separate internal network shared only with the g
 
 Each workflow has an immutable document version and follows `ingest → extract → classify → complete`. The controller issues opaque, 30-second task grants bound to workflow, version, stage and input hash. Claim and completion are transactional. Conflicting, expired, cross-workflow and out-of-order completions are rejected; identical completed requests return their retained outcome, even after restart. An unfinished task becomes claimable after lease expiry. Workers retry completion after a lost response. Multiple workflow IDs have independent state.
 
-Submission IDs are idempotent: reusing an ID with different text fails. A persistent quota admits 20 new workflows per client per fixed 60-second window; retries of the same submission do not consume additional quota. Tests and load commands share this limit. If exhausted, wait until the next minute boundary. This is admission control, not a cap on every resource cost.
+Submission IDs are idempotent: reusing an ID with different text fails. A persistent quota admits 20 submissions/replacements per client per fixed 60-second window; retries of the same submission do not consume additional quota. Tests and load commands share this limit. If exhausted, wait until the next minute boundary. This is admission control, not a cap on every resource cost.
 
-Transitions, completion outcomes and authenticated audit records commit in the same SQLite transaction. Audit failure rolls back the transition; startup verifies the chain. The chain has no external checkpoint, so privileged removal of its valid tail remains outside the guarantee. Credentials are generated once in ignored `.prototype/secrets/`; host directories are mode `0700`, individual mounted files are readable by non-root containers. Do not delete or regenerate credentials while retaining state. Compose secrets here are local file mounts, not encrypted secret storage.
+Transitions, completion outcomes and authenticated audit records commit in the same SQLite transaction. Audit failure rolls back the transition; startup verifies the chain. To detect removal of a previously observed valid audit tail, retain the receipt returned by `reference audit` independently and verify it with `--receipt`. Credentials are generated once in ignored `.prototype/secrets/`; host directories are mode `0700`, individual mounted files are readable by non-root containers. Do not delete or regenerate credentials while retaining state. Compose secrets here are local file mounts, not encrypted secret storage.
 
 `check` runs a real document, duplicate submission and forbidden API requests. It probes each running worker for absent storage/other credentials and denied direct TCP connections to the controller (by name and IP), a sibling and an external IP. `load` runs up to four concurrent clients and reports completion counts and observed latency. Transactional replay, grant substitution, concurrent completion, quota persistence, audit failure and lease recovery are also covered by `tests/test_prototype.py` using temporary databases and real loopback HTTP servers. These tests need permission to open local sockets.
 
-This is a single-host workflow-security prototype with one fixture client identity and one identity per worker stage. A compromised worker can submit incorrect but schema-valid output for its assigned stage, consume tasks for that stage, or withhold completion; workflow order does not establish semantic correctness or availability. The guard, controller, Docker daemon, host and provisioned identities are trusted. HTTP credentials travel in plaintext on the private testbed networks. Direct TCP egress probes do not establish protection against every DNS/covert channel. The prototype does not provide syscall interception, TLS interception, distributed consensus or cloud/runtime isolation results. The original document approval/purge commands remain in the local application and are not container API endpoints.
+This is a single-host reference application with two fixture document owners, administrator/investigator roles and one identity per worker stage. A compromised worker can submit incorrect but schema-valid output for its assigned stage, consume tasks for that stage, or withhold completion; workflow order does not establish semantic correctness or availability. The guard, controller, Docker daemon, host and provisioned identities are trusted. Private-network HTTP is authenticated and signed but unencrypted. Direct TCP egress probes do not establish protection against every DNS/covert channel. The reference app does not provide syscall interception, TLS interception, distributed consensus or cloud/runtime isolation results. The reference app also enforces ownership, signed requests, approved deletion, policy checks and restricted telemetry; see the [reference-app guide](docs/reference-app.md).
 
 Implementation: [`client.py`](src/ssrsf/prototype/client.py) supplies the host interface; [`src/ssrsf/prototype/`](src/ssrsf/prototype/), [`compose.yaml`](compose.yaml), [`scripts/prototype.py`](scripts/prototype.py). The existing seven-experiment reports remain scoped to their original fixtures; Compose verification is separate.
 
-## Reference implementation for tests and comparison
+## Reference-app controls
 
-The original in-process `ReferenceApp` remains available for tests and comparison. It is not a third main-menu mode and does not use the container store. These explicit reference commands bypass the main menu:
-
-```bash
-# Open the original local reference console
-PYTHONPATH=src python3 -m ssrsf --local
-
-# Process text with the local reference implementation
-PYTHONPATH=src python3 -m ssrsf --text "My document about serverless security"
-
-# Keep local reference state across runs
-PYTHONPATH=src python3 -m ssrsf --local --state /tmp/my-srsf
-```
-
-The reference console retains ownership, tampering, audit, approval and purge demonstrations. These operations are not automatically added to the Docker document API.
-
-## Reference control demonstration
-
-Open the reference console with `PYTHONPATH=src python3 -m ssrsf --local`, then enter:
-
-```text
-ingest This is my document about serverless security.
-read
-tamper Changed input
-purge
-auth admin-token
-approve
-purge
-audit
-quit
-```
-
-`tamper` demonstrates integrity rejection. The first `purge` fails without approval; the administrator can then approve and delete the current version. Approval expires after 30 seconds and cannot be reused or applied to a replacement version.
-
-| Command | Purpose |
-|---|---|
-| `ingest TEXT` / `file PATH` | Process text or a UTF-8 file, replacing the current version |
-| `read` | Show the document, normalized text, version and classification |
-| `auth TOKEN` | Select a local fixture identity |
-| `approve` / `purge` | Issue an administrator grant / delete its exact target version |
-| `tamper TEXT` | Demonstrate rejection of an altered signed event |
-| `telemetry` | Read detailed traces and audit records as administrator or investigator |
-| `audit` | Verify the audit chain |
-| `budget` | Show ingest accounting and reset the quota bucket |
-| `help` / `quit` | Show commands / exit |
-
-The workflow stores one document (`public/item`), accepts at most 128 characters and normalizes whitespace. At least 10 words produces the label `long`; otherwise it is `short`. Sessions start as `user-token`; `admin-token` and `investigator-token` select the other fixture roles. Each bucket admits at most 20 ingest attempts; quotas reset with `budget` or restart.
-
-State is temporary unless `--state` is supplied:
+The Docker application is the reference app. Its focused document menu is backed by ownership checks, signed requests, image-source integrity, atomic audit records, worker scratch evidence and persistent quotas. Administrative commands add version-bound approval/purge, reconciliation, classification reports, exact policy deployment and restricted telemetry.
 
 ```bash
-# Keep state while using the local reference console
-PYTHONPATH=src python3 -m ssrsf --local --state /tmp/my-srsf
-
-# Process a file directly using the same persistent state
-PYTHONPATH=src python3 -m ssrsf --file /path/to/input.txt --state /tmp/my-srsf
+PYTHONPATH=src python3 -m ssrsf reference --identity admin report
+PYTHONPATH=src python3 -m ssrsf reference audit
+PYTHONPATH=src python3 -m ssrsf reference tamper "Original document"
 ```
 
-## Use it from Python
-
-Install the package or run with `PYTHONPATH=src`:
-
-```python
-from pathlib import Path
-from ssrsf.workflow import ReferenceApp
-
-app = ReferenceApp(Path("/tmp/my-srsf-app"))
-document = app.ingest("user-token", "A bounded local text document")
-targets = [(document["id"], document["version"])]
-grant = app.approve("admin-token", targets)
-app.purge("admin-token", targets, grant)
-assert app.audit.verify()
-```
-
-| Component | Responsibility |
-|---|---|
-| [workflow.py](src/ssrsf/workflow.py) | Compose the pipeline, ownership checks, telemetry and quota |
-| [controls.py](src/ssrsf/controls.py) | Validate schemas and HMAC integrity; verify artifact hashes |
-| [audit.py](src/ssrsf/audit.py) | Commit audit records and capture invocation/scratch-state evidence |
-| [broker.py](src/ssrsf/broker.py) | Store versioned documents and enforce single-use purge grants |
-| [policy.py](src/ssrsf/policy.py) | Enforce exact rules and hold permission expansions for review |
-| [state.py](src/ssrsf/state.py) | Persist trusted keys and artifact inventory |
-
-Keys, documents and accepted policy history persist in the state directory. Startup verifies audit integrity and refuses existing databases with missing keys. An exit-audit failure can leave a committed operation with an evidence gap; the broker supports read-only reconciliation.
-
-The application controls live directly in `src/ssrsf/`; controlled threat fixtures and worker processes live in [`experiments/`](src/ssrsf/experiments/). [`evaluation.py`](src/ssrsf/evaluation.py) runs them, [`evidence.py`](src/ssrsf/evidence.py) defines the source inventory, and `scripts/` validates retained results.
+See the [reference-app guide](docs/reference-app.md) for identities, deletion grants, policies, quota controls and the Python API. After updating the source, run `python3 scripts/prototype.py init` and `docker compose up --build -d --wait` once to rebuild services and provision missing role credentials; existing state and credentials are preserved.
 
 ## Experiments: step by step
 
@@ -351,7 +274,7 @@ PYTHONPATH=src python3 -m ssrsf evaluate --non-interactive --trials 30 --seed 42
 PYTHONPATH=src python3 -m ssrsf evaluate --non-interactive --experiment persistence --trials 20 --output results-persistence
 ```
 
-Guided evaluation prompts for experiments, trials (2–200), seed, modeled invocation price and output folder. Defaults are all experiments, 30 trials, seed 42, price `0.000001` and `results/`. Existing report files in the chosen folder are replaced after the final prompt. Use `evaluate --help` for options. Explicit `--text` and `--file` commands process a document through the local reference implementation.
+Guided evaluation prompts for experiments, trials (2–200), seed, modeled invocation price and output folder. Defaults are all experiments, 30 trials, seed 42, price `0.000001` and `results/`. Existing report files in the chosen folder are replaced after the final prompt. Use `evaluate --help` for options.
 
 | Experiment | What it examines | Article reference |
 |---|---|---|
@@ -365,7 +288,7 @@ Guided evaluation prompts for experiments, trials (2–200), seed, modeled invoc
 
 Read the [measured report](results/report.md) for findings and limitations. [results.json](results/results.json) contains observations, configuration, host details and source hashes; [metrics.csv](results/metrics.csv) contains aggregates. The [methodology](research/methodology.md) includes protocols and the [workflow-to-paper mapping](research/methodology.md#document-workflow-mapped-to-the-paper); [article.json](research/article.json) records the source PDF’s identity.
 
-The paper is a review; the event schema, HMAC, artifact inventory, audit chain, approval protocol and quota settings are this project’s engineering choices. HMAC provides shared-key integrity, not replay protection. Artifact hashes detect changes, not dependency vulnerabilities.
+The paper is a review; the event schema, HMAC, artifact inventory, audit chain and quota settings are this project’s engineering choices. HMAC provides shared-key integrity, not replay protection. Artifact hashes detect changes, not dependency vulnerabilities.
 
 Every experiment includes a protected variant alongside its vulnerable comparison. Side channels use uniform public traces and the same work schedule for both roles; timing inference is measured, not assumed eliminated. Rollouts check the current reader policy on every invocation, including calls to stale replicas. Billing's `authenticated-quota` variant verifies credentials and exact invoke permission before metered dispatch, then applies the 20-call bucket cap. Forged, revoked and read-only fixture credentials are rejected even at low rates; valid invoke credentials can still be abused.
 
@@ -375,31 +298,33 @@ Rates and descriptive 95% Wilson intervals apply to constructed fixtures. Side-c
 
 ## Architecture and deployment scope
 
-The container prototype separates processing from enforcement: workers request operations through a trusted guard and controller. The controller enforces a fixed document-stage graph, issues durable task grants and records transitions with their outcomes and audit evidence. The implemented boundary is service-level workflow enforcement; syscall and TLS interception are outside the evaluated scope.
+The reference app separates processing from enforcement: workers request operations through a trusted guard and controller. The controller enforces a fixed document-stage graph, issues durable task grants and records transitions with their outcomes and audit evidence. The implemented boundary is service-level workflow enforcement; syscall and TLS interception are outside the evaluated scope.
 
-| Property | Local `ReferenceApp` | Container prototype |
-|---|---|---|
-| Execution | One Python processing boundary | Three workers, guard and controller |
-| State | One document slot; optional local state directory | Multiple workflow IDs; controller-only SQLite volume |
-| Input integrity | Schema and shared-key event HMAC | Authenticated service calls and controller-bound input hashes |
-| Retry protection | Single-use version-bound purge grants | Idempotent submission/completion and expiring stage grants |
-| Audit | Entry/exit records; exit failure can follow committed effects | Transition, outcome and audit commit in one transaction |
-| Quota | 20 ingest attempts; manual/restart reset | 20 new workflows per client per fixed minute; persisted |
-| Approval/purge | Implemented local operations | No approval/purge API |
+| Property | Container workflow |
+|---|---|
+| Execution | Three workers, guard and controller |
+| State | Multiple workflow IDs; controller-only SQLite volume |
+| Input integrity | Path-bound request HMAC, source inventory and controller-bound input hashes |
+| Retry protection | Idempotent submission/completion and expiring stage grants |
+| Audit | Transition, outcome and audit commit in one transaction |
+| Quota | 20 submissions/replacements per client per fixed minute; persisted |
+| Management | Version-bound approval/purge, reconciliation, policy deployment and restricted telemetry |
 
-The required stack is Python, Docker with Linux containers and Compose. SQLite is part of Python, and HTTP uses the standard library. No AWS account, Kubernetes cluster, gVisor installation or separate database server is required. Host and Docker administration remain trusted. The container prototype is not a cloud deployment or a replacement for every local application feature.
+The required stack is Python, Docker with Linux containers and Compose. SQLite is part of Python, and HTTP uses the standard library. No AWS account, Kubernetes cluster, gVisor installation or separate database server is required. Host and Docker administration remain trusted. The reference app is a single-host deployment; cloud deployment is outside its scope.
 
-## Verified prototype behavior
+## Verified reference-app behavior
 
-The recorded Python validation contains **95 passing tests**, including ten controller/HTTP tests and ten interactive-client tests. Main-menu tests also cover automatic startup, return navigation, Docker failures and switching between document processing and experiments. Separate live Compose checks confirmed:
+The recorded Python validation contains **83 passing tests**, covering controller/HTTP behavior, the focused document menu and restored reference-app controls. Main-menu tests also cover automatic startup, return navigation, Docker failures and switching between document processing and experiments. Separate live Compose checks confirmed:
 
 - A complete ingest/extract/classify workflow and idempotent submission.
 - Typed input, normalized output and status lookup; scripted retry with the same workflow ID.
-- Rejection of forged credentials, forbidden roles and conflicting submissions.
+- Rejection of forged credentials, altered signed requests, forbidden roles and conflicting submissions.
+- Ownership checks, version replacement, exact-version approval/purge, replay rejection, read-only reconciliation, policy controls and privileged telemetry.
+- Scratch entry/exit evidence, including a mismatch after an inert marker was added between invocations.
 - All three workers lacked database access and other services' mounted credentials.
 - Worker TCP probes to the controller by name and IP, a sibling and a selected external IP failed.
-- Five submitted workflows completed under a smoke load of up to four concurrent clients. The observed median was approximately **1.176 seconds** for that run.
-- A completed workflow kept its version, text and classification after a controller restart.
+- Five submitted workflows completed under a smoke load of up to four concurrent clients. The observed median was approximately **1.482 seconds** for that run.
+- A completed workflow, deletion outcome and valid audit chain survived a controller restart.
 
 These single-host observations are separate from the seven-experiment bundle. They are not a scalability study, a general egress guarantee or a comparative performance study. Run `check` and `load` to repeat the live checks; quota usage and host scheduling can affect results. CI includes a separate `container-prototype` job for these commands.
 
@@ -423,6 +348,6 @@ Repeat `--python` to validate additional installed interpreters. `results/valida
 
 ## Limits
 
-The original application is an offline reference implementation: its Python roles, SQLite and filesystem owner share a local trust boundary. The separate container prototype places workers behind a guard/controller boundary under a trusted Docker host. Subprocess workspaces are not hostile-code sandboxes, replica objects are not distributed nodes, and markers/artifacts are inert. Existing ignored `.ssrsf/` data is preserved and unused.
+The reference app places workers behind a guard/controller boundary under a trusted Docker host. Subprocess workspaces are not hostile-code sandboxes, replica objects are not distributed nodes, and markers/artifacts are inert.
 
-Cloud IAM enforcement, container escapes, adversarial co-location, CPU/cache channels, provider scheduling, real billing and distributed rollout safety remain outside the local evidence. The seven experiments measure fixture completion and timing; prototype tests additionally exercise lease recovery, transaction rollback and restart persistence. Production availability SLOs, error budgets and multi-host incident recovery are not evaluated.
+Cloud IAM enforcement, container escapes, adversarial co-location, CPU/cache channels, provider scheduling, real billing and distributed rollout safety remain outside the local evidence. The seven experiments measure fixture completion and timing; reference-app tests additionally exercise lease recovery, transaction rollback and restart persistence. Production availability SLOs, error budgets and multi-host incident recovery are not evaluated.

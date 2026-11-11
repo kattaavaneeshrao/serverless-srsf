@@ -114,16 +114,18 @@ def _activity_menu():
 
 
 def main(argv=None):
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments[:1] == ["reference"]:
+        from .prototype.client import main as reference_main
+        try:
+            reference_main(arguments[1:])
+            return 0
+        except (ValueError, OSError, RuntimeError) as exc:
+            print(f"ssrsf: {exc}", file=sys.stderr)
+            return 1
     parser = argparse.ArgumentParser(prog="ssrsf", description="Interactive document workflow with Docker isolation and seven local security experiments")
-    def workflow_options(target):
-        source = target.add_mutually_exclusive_group()
-        source.add_argument("--text", help="Process text with the local reference implementation (no Docker)")
-        source.add_argument("--file", type=Path, help="Process a UTF-8 file with the local reference implementation")
-        target.add_argument("--state", type=Path, help="Keep local reference state across runs")
-
-    workflow_options(parser)
-    parser.add_argument("--local", action="store_true", help=argparse.SUPPRESS)
     commands = parser.add_subparsers(dest="command")
+    commands.add_parser("reference", help="Use authenticated Docker reference-app commands")
     commands.add_parser("interactive", help="Choose evaluation settings through guided prompts")
     run = commands.add_parser("evaluate", help="Run paired local experiments and write measured evidence")
     run.add_argument("--non-interactive", action="store_true", help="Run without prompts (for scripts and CI)")
@@ -132,12 +134,9 @@ def main(argv=None):
     run.add_argument("--unit-price", type=float, default=.000001, help="Arbitrary cost units per accepted invocation")
     run.add_argument("--experiment", choices=EXPERIMENTS, action="append", help="Run only these experiments (repeatable)")
     run.add_argument("--output", type=Path, default=Path("results"))
-    args = parser.parse_args(argv)
+    args = parser.parse_args(arguments)
     try:
         if args.command is None:
-            if args.local or args.text is not None or args.file is not None or args.state is not None:
-                from .console import run as run_console
-                return run_console(args)
             return _activity_menu()
         elif args.command == "interactive" or not args.non_interactive:
             args = _interactive(args if args.command == "evaluate" else None)

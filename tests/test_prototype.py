@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ssrsf.prototype.service import controller_dispatch, guard_dispatch, transform
 from ssrsf.prototype.store import Denied, STAGES, WorkflowStore
+from ssrsf.prototype.reference import CLIENTS
 from ssrsf.prototype.transport import RemoteError, request, server
 
 
@@ -127,7 +128,7 @@ class HTTPTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.store = WorkflowStore(Path(self.directory.name) / "state.sqlite", b"audit-key")
-        self.credentials = {name: name + "-credential" * 4 for name in ("client", *STAGES)}
+        self.credentials = {name: name + "-credential" * 4 for name in (*CLIENTS, *STAGES)}
         self.internal = server(("127.0.0.1", 0), controller_dispatch(self.store), {"guard": "private-controller"})
         self.internal_url = "http://127.0.0.1:" + str(self.internal.server_port)
         self.guard = server(("127.0.0.1", 0), guard_dispatch(self.internal_url, "private-controller"), self.credentials)

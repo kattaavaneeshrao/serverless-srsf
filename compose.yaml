@@ -28,8 +28,8 @@ services:
     <<: *service
     command: [guard]
     networks: [edge, control, ingest_net, extract_net, classify_net]
-    ports: ["127.0.0.1:8080:8080"]
-    secrets: [controller, client, ingest, extract, classify]
+    ports: ["127.0.0.1:${SRSF_PORT:-8080}:8080"]
+    secrets: [controller, client, client2, admin, investigator, ingest, extract, classify]
     depends_on:
       controller:
         condition: service_healthy
@@ -39,6 +39,7 @@ services:
     command: [ingest]
     networks: [ingest_net]
     secrets: [ingest]
+    tmpfs: ["/scratch:uid=1000,gid=1000,mode=0700,size=1m"]
     depends_on: &guard_ready
       guard:
         condition: service_healthy
@@ -47,12 +48,14 @@ services:
     command: [extract]
     networks: [extract_net]
     secrets: [extract]
+    tmpfs: ["/scratch:uid=1000,gid=1000,mode=0700,size=1m"]
     depends_on: *guard_ready
   classify:
     <<: *service
     command: [classify]
     networks: [classify_net]
     secrets: [classify]
+    tmpfs: ["/scratch:uid=1000,gid=1000,mode=0700,size=1m"]
     depends_on: *guard_ready
 
 networks:
@@ -80,3 +83,9 @@ secrets:
     file: .prototype/secrets/extract
   classify:
     file: .prototype/secrets/classify
+  client2:
+    file: .prototype/secrets/client2
+  admin:
+    file: .prototype/secrets/admin
+  investigator:
+    file: .prototype/secrets/investigator

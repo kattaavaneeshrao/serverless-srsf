@@ -13,26 +13,11 @@ from pathlib import Path
 
 from ssrsf.controls import canonical
 
-STAGES = ("ingest", "extract", "classify")
-ID = re.compile(r"[a-zA-Z0-9_-]{1,80}\Z")
+from .contracts import Denied, STAGES, exact, identifier
+from .reference import ReferenceOperations
 
 
-class Denied(ValueError):
-    pass
-
-
-def exact(body, fields):
-    if not isinstance(body, dict) or set(body) != set(fields):
-        raise Denied("Unexpected request fields")
-
-
-def identifier(value):
-    if not isinstance(value, str) or not ID.fullmatch(value):
-        raise Denied("Invalid identifier")
-    return value
-
-
-class WorkflowStore:
+class WorkflowStore(ReferenceOperations):
     def __init__(self, path: Path, audit_key: bytes, clock=time.time, lease_seconds=30, cap=20):
         self.path, self.audit_key, self.clock = path, audit_key, clock
         self.lease_seconds, self.cap = lease_seconds, cap
@@ -52,6 +37,7 @@ class WorkflowStore:
                     owner TEXT NOT NULL, bucket INTEGER NOT NULL, used INTEGER NOT NULL,
                     PRIMARY KEY(owner,bucket));
             """)
+            self.initialize_reference(db)
         if not self.verify_audit():
             raise Denied("Audit integrity failure")
 
@@ -97,6 +83,8 @@ class WorkflowStore:
             raise Denied("Text must contain 1 to 128 characters")
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            if db.execute("SELECT 1 FROM deleted_workflows WHERE id=?", (workflow,)).fetchone():
+                raise Denied("Deleted workflow IDs cannot be reused")
             old = db.execute("SELECT * FROM workflows WHERE id=?", (workflow,)).fetchone()
             if old:
                 if old["owner"] != owner or old["raw"] != text:
@@ -119,19 +107,22 @@ class WorkflowStore:
         exact(body, ("id",))
         workflow = identifier(body["id"])
         with self.connect() as db:
-            row = db.execute("SELECT * FROM workflows WHERE id=? AND owner=?", (workflow, owner)).fetchone()
+            row = db.execute("SELECT * FROM workflows WHERE id=? AND (owner=? OR ?='admin')", (workflow, owner, owner)).fetchone()
         if row is None:
             raise Denied("Unknown workflow")
         return {"id": workflow, "version": row["version"],
                 "state": STAGES[row["stage"]] if row["stage"] < len(STAGES) else "complete",
-                "text": row["value"] if row["stage"] == len(STAGES) else None, "label": row["label"]}
+                "text": row["value"] if row["stage"] == len(STAGES) else None, "label": row["label"],
+                "raw": row["raw"], "owner": row["owner"]}
 
     def claim(self, stage, body):
-        exact(body, ())
+        exact(body, ("scratch",) if "scratch" in body else ())
+        snapshot = scratch_snapshot(body.get("scratch", {}))
         if stage not in STAGES:
             raise Denied("Unknown stage")
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            self.enforce_policy(db, stage)
             now = self.clock()
             row = db.execute("SELECT * FROM workflows WHERE stage=? AND (token IS NULL OR expires<=?) "
                              "ORDER BY created,id LIMIT 1", (STAGES.index(stage), now)).fetchone()
@@ -142,13 +133,17 @@ class WorkflowStore:
             expires = now + self.lease_seconds
             db.execute("UPDATE workflows SET token=?,expires=?,input_hash=? WHERE id=?",
                        (token, expires, digest, row["id"]))
+            previous = db.execute("SELECT snapshot FROM scratch WHERE stage=?", (stage,)).fetchone()
+            entry_status = "first" if previous is None else ("matched" if previous[0] == canonical(snapshot).decode() else "mismatch")
             self.audit(db, {"kind": "claimed", "id": row["id"], "stage": stage,
-                            "version": row["version"], "input_hash": digest, "expires": expires})
+                            "version": row["version"], "input_hash": digest, "expires": expires,
+                            "scratch_entry": snapshot, "entry_status": entry_status})
             return {"task": {"id": row["id"], "version": row["version"], "stage": stage,
                              "value": row["value"], "input_hash": digest, "token": token, "expires": expires}}
 
     def complete(self, stage, body):
-        exact(body, ("id", "version", "input_hash", "token", "output"))
+        exact(body, ("id", "version", "input_hash", "token", "output", *(["scratch"] if "scratch" in body else [])))
+        snapshot = scratch_snapshot(body.get("scratch", {}))
         if stage not in STAGES:
             raise Denied("Unknown stage")
         workflow = identifier(body["id"])
@@ -160,6 +155,7 @@ class WorkflowStore:
         encoded = canonical(body).decode()
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            self.enforce_policy(db, stage)
             old = db.execute("SELECT * FROM outcomes WHERE token=?", (body["token"],)).fetchone()
             if old:
                 if old["stage"] != stage or old["body"] != encoded:
@@ -178,7 +174,17 @@ class WorkflowStore:
                         output if stage == "classify" else None, workflow))
             db.execute("INSERT INTO outcomes VALUES (?,?,?,?,?)",
                        (body["token"], workflow, stage, encoded, canonical(response).decode()))
+            db.execute("INSERT INTO scratch VALUES (?,?) ON CONFLICT(stage) DO UPDATE SET snapshot=excluded.snapshot",
+                       (stage, canonical(snapshot).decode()))
             self.audit(db, {"kind": "completed", "id": workflow, "stage": stage,
                             "version": row["version"], "input_hash": row["input_hash"],
-                            "output_hash": hashlib.sha256(output.encode()).hexdigest()})
+                            "output_hash": hashlib.sha256(output.encode()).hexdigest(), "scratch_exit": snapshot})
         return response
+
+
+def scratch_snapshot(snapshot):
+    if (not isinstance(snapshot, dict) or len(snapshot) > 16
+            or any(not isinstance(k, str) or not 1 <= len(k) <= 128
+                   or not isinstance(v, str) or not re.fullmatch(r"[0-9a-f]{64}", v) for k,v in snapshot.items())):
+        raise Denied("Invalid bounded scratch inventory")
+    return snapshot

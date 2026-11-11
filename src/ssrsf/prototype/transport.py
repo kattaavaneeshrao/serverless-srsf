@@ -8,6 +8,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
 
 from .store import Denied
+from ssrsf.controls import sign_event
 
 MAX_BODY = 8192
 
@@ -18,10 +19,12 @@ class RemoteError(RuntimeError):
         self.status = status
 
 
-def request(url, token, body, timeout=5):
+def request(url, token, body, timeout=5, *, signature=None):
     # Explicitly avoid environment proxies for private service traffic and secrets.
+    from urllib.parse import urlsplit
+    signature = signature if signature is not None else sign_event({"path": urlsplit(url).path, "body": body}, token.encode())
     req = Request(url, json.dumps(body, allow_nan=False).encode(),
-                  {"Authorization": "Bearer " + token, "Content-Type": "application/json"}, method="POST")
+                  {"Authorization": "Bearer " + token, "Content-Type": "application/json", "X-SRSF-Signature": signature}, method="POST")
     try:
         with build_opener(ProxyHandler({})).open(req, timeout=timeout) as response:
             return json.load(response)
@@ -90,6 +93,10 @@ def server(address, dispatch, credentials):
                 body = json.loads(raw)
                 if not isinstance(body, dict):
                     raise Denied("Expected JSON object")
+                expected = sign_event({"path": self.path, "body": body}, credentials[identity].encode())
+                supplied = self.headers.get("X-SRSF-Signature", "")
+                if not hmac.compare_digest(supplied.encode(), expected.encode()):
+                    raise Denied("Event integrity failure")
                 result = dispatch(identity, self.path, body)
             except Denied as exc:
                 self.reply(403, {"error": str(exc)})

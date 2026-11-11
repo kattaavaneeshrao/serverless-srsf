@@ -4,7 +4,7 @@ Article: [Serverless computing: a security perspective](https://doi.org/10.1186/
 
 The article is a review with qualitative comparisons and countermeasure suggestions. It supplies no numerical benchmark results to reproduce. These are newly measured local experiments, with explicitly constructed workloads.
 
-Run: 2026-11-11T07:18:30.684259+00:00; 30 trials; seed 42; Python 3.14.8.
+Run: 2026-11-11T17:24:38.430575+00:00; 30 trials; seed 42; Python 3.14.8.
 
 Raw observations, configuration, machine details and source hashes are in `results.json`. `metrics.csv` contains aggregate rates/timings. Timings include initialization and vary by host. Binomial Wilson intervals are descriptive; repeated fixtures and correlated buckets do not establish population effectiveness.
 
@@ -16,8 +16,8 @@ Execution: executed local event consumer.
 
 | Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |
 |---|---|---|---|
-| unchecked | 150/150 (100.0%; 95% CI 97.5–100.0%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 0.000 / 0.000 |
-| validated-signed | 0/150 (0.0%; 95% CI 0.0–2.5%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 0.004 / 0.006 |
+| unchecked | 150/150 (100.0%; 95% CI 97.5–100.0%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 0.000 / 0.001 |
+| validated-signed | 0/150 (0.0%; 95% CI 0.0–2.5%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 0.004 / 0.026 |
 
 Limits:
 
@@ -33,7 +33,7 @@ Execution: executed local function/service access checks.
 
 | Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |
 |---|---|---|---|
-| gateway-only-broad-role | 120/120 (100.0%; 95% CI 96.9–100.0%) | 90/90 (100.0%; 95% CI 95.9–100.0%) | 0.000 / 0.000 |
+| gateway-only-broad-role | 120/120 (100.0%; 95% CI 96.9–100.0%) | 90/90 (100.0%; 95% CI 95.9–100.0%) | 0.000 / 0.001 |
 | per-function-least-privilege | 0/120 (0.0%; 95% CI 0.0–3.1%) | 90/90 (100.0%; 95% CI 95.9–100.0%) | 0.000 / 0.001 |
 
 Limits:
@@ -48,8 +48,8 @@ Execution: executed file integrity experiment.
 
 | Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |
 |---|---|---|---|
-| hash-locked-inventory | 0/60 (0.0%; 95% CI 0.0–6.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.108 / 0.215 |
-| untracked | 60/60 (100.0%; 95% CI 94.0–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.019 / 0.081 |
+| hash-locked-inventory | 0/60 (0.0%; 95% CI 0.0–6.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.089 / 0.122 |
+| untracked | 60/60 (100.0%; 95% CI 94.0–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.016 / 0.021 |
 
 Limits:
 
@@ -64,9 +64,9 @@ Execution: real subprocesses and temporary filesystem.
 
 | Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |
 |---|---|---|---|
-| fresh-workspace | 0/30 (0.0%; 95% CI 0.0–11.4%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 52.489 / 64.387 |
-| warm-monitored | 0/30 (0.0%; 95% CI 0.0–11.4%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 25.702 / 33.895 |
-| warm-unchecked | 30/30 (100.0%; 95% CI 88.6–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 24.877 / 41.162 |
+| fresh-workspace | 0/30 (0.0%; 95% CI 0.0–11.4%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 50.047 / 63.544 |
+| warm-monitored | 0/30 (0.0%; 95% CI 0.0–11.4%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 25.857 / 30.426 |
+| warm-unchecked | 30/30 (100.0%; 95% CI 88.6–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 24.761 / 27.873 |
 
 Limits:
 
@@ -85,8 +85,8 @@ Attacker training and testing use different calls. Both splits contain equal num
 
 | Variant | Trace role accuracy | Held-out timing role accuracy | Response p50 / p95 (ms) |
 |---|---|---|---|
-| exposed | 60/60 (100.0%; 95% CI 94.0–100.0%) | 59/60 (98.3%; 95% CI 91.1–99.7%) | 3.104 / 3.899 |
-| uniform-workflow | 30/60 (50.0%; 95% CI 37.7–62.3%) | 33/60 (55.0%; 95% CI 42.5–66.9%) | 5.041 / 5.081 |
+| exposed | 60/60 (100.0%; 95% CI 94.0–100.0%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 2.236 / 3.783 |
+| uniform-workflow | 30/60 (50.0%; 95% CI 37.7–62.3%) | 25/60 (41.7%; 95% CI 30.1–54.3%) | 5.029 / 5.072 |
 
 Uniform-workflow hides branch names and executes the same schedule for both roles. Timing remains a measured inference result, not a guarantee against all side channels.
 
@@ -106,8 +106,8 @@ Execution: concurrent calls to a partially updated local replica pool.
 
 | Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |
 |---|---|---|---|
-| current-policy-gate | 0/30 (0.0%; 95% CI 0.0–11.4%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.399 / 0.590 |
-| rolling-stale-replicas | 30/30 (100.0%; 95% CI 88.6–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.414 / 0.705 |
+| current-policy-gate | 0/30 (0.0%; 95% CI 0.0–11.4%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.413 / 0.676 |
+| rolling-stale-replicas | 30/30 (100.0%; 95% CI 88.6–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.460 / 0.654 |
 
 Limits:
 

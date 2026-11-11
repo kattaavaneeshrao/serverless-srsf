@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Host client for the isolated document workflow and Compose checks."""
+"""Host client for the Docker reference app and Compose checks."""
 from __future__ import annotations
 
 import argparse
@@ -13,6 +13,8 @@ import time
 from pathlib import Path
 
 from ssrsf.prototype.store import STAGES
+from ssrsf.prototype.reference import CLIENTS
+from ssrsf.controls import sign_event
 from ssrsf.prototype.transport import RemoteError, request
 
 _SOURCE_ROOT = Path(__file__).resolve().parents[3]
@@ -55,7 +57,7 @@ def initialize():
         if directory.is_symlink():
             raise RuntimeError("Refusing symlink secret directory")
         directory.chmod(0o700)
-    for name in ("controller", "audit", "client", *STAGES):
+    for name in ("controller", "audit", *CLIENTS, *STAGES):
         path = SECRETS / name
         if path.is_symlink():
             raise RuntimeError("Refusing symlink credential")
@@ -77,10 +79,10 @@ def credential(name):
     return (SECRETS / name).read_text().strip()
 
 
-def wait_complete(url, workflow, timeout=30):
+def wait_complete(url, workflow, timeout=30, *, identity="client"):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        result = request(url + "/status", credential("client"), {"id": workflow})
+        result = request(url + "/status", credential(identity), {"id": workflow})
         if result["state"] == "complete":
             return result
         time.sleep(0.1)
@@ -160,10 +162,10 @@ def load(url, count):
         raise RuntimeError("Some requests failed; the shared 20/minute quota also applies to load tests.")
 
 
-def send_submission(url, body):
+def send_submission(url, body, *, identity="client"):
     print("Workflow ID:", body["id"], flush=True)
-    request(url + "/submit", credential("client"), body)
-    return wait_complete(url, body["id"])
+    request(url + "/submit", credential(identity), body)
+    return wait_complete(url, body["id"]) if identity == "client" else wait_complete(url, body["id"], identity=identity)
 
 
 def show_workflow(result):
@@ -180,10 +182,10 @@ def document_text(value):
     return value
 
 
-def interactive(url, input_fn=None, *, return_to_main=False):
+def interactive(url, input_fn=None, *, return_to_main=False, identity="client"):
     ask = input_fn or input
     last = None
-    print("Serverless SRSF — container workflow")
+    print("Serverless SRSF — reference app")
     print("Documents accept 1–128 characters. The shared limit is 20 new workflows per minute.")
     while True:
         print("\n1. Enter document text\n2. Process a UTF-8 text file\n3. Check workflow status")
@@ -206,14 +208,14 @@ def interactive(url, input_fn=None, *, return_to_main=False):
                 # Preserve the ID and exact input before dispatch, including when
                 # a response is lost or the user cancels the wait.
                 last = {"id": secrets.token_hex(16), "text": text}
-                show_workflow(send_submission(url, last))
+                show_workflow(send_submission(url, last) if identity == "client" else send_submission(url, last, identity=identity))
             elif choice == "3":
                 suffix = " [last submission]" if last else ""
                 workflow = ask("Workflow ID" + suffix + ": ").strip()
                 workflow = workflow or (last["id"] if last else "")
                 if not workflow:
                     raise ValueError("Enter a workflow ID or submit a document first.")
-                show_workflow(request(url + "/status", credential("client"), {"id": workflow}))
+                show_workflow(request(url + "/status", credential(identity), {"id": workflow}))
             else:
                 print("Choose a listed option (0–3).")
         except EOFError:
@@ -242,6 +244,7 @@ def interactive(url, input_fn=None, *, return_to_main=False):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default="http://127.0.0.1:8080")
+    parser.add_argument("--identity", choices=CLIENTS, default="client", help="Authenticate as a provisioned role")
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("interactive", help="Open the document menu (default)")
     commands.add_parser("init")
@@ -250,24 +253,97 @@ def main(argv=None):
     submit.add_argument("--id", default=None, help="Reuse this id for a safe retry")
     status = commands.add_parser("status")
     status.add_argument("id")
+    read = commands.add_parser("read", help="Read an owned document (administrator can read all)")
+    read.add_argument("id")
+    replacement = commands.add_parser("replace")
+    replacement.add_argument("id")
+    replacement.add_argument("version")
+    replacement.add_argument("text")
+    approval = commands.add_parser("approve")
+    approval.add_argument("ids", nargs="+")
+    approval.add_argument("--operation", default=None)
+    approval.add_argument("--ttl", type=int, default=30)
+    approval.add_argument("--output", type=Path, required=True, help="Save the exact deletion grant")
+    purge = commands.add_parser("purge")
+    purge.add_argument("grant", type=Path)
+    investigation = commands.add_parser("investigate")
+    investigation.add_argument("operation")
+    commands.add_parser("report")
+    telemetry = commands.add_parser("telemetry")
+    telemetry.add_argument("--detailed", action="store_true")
+    telemetry.add_argument("--after", type=int, default=0)
+    telemetry.add_argument("--limit", type=int, default=50)
+    audit = commands.add_parser("audit")
+    audit.add_argument("--receipt", type=Path)
+    budget = commands.add_parser("budget")
+    budget.add_argument("--owner")
+    budget.add_argument("--reset", action="store_true")
+    deployment = commands.add_parser("deploy")
+    deployment.add_argument("rules", type=Path)
+    deployment.add_argument("--change-id")
+    tamper = commands.add_parser("tamper")
+    tamper.add_argument("text")
     commands.add_parser("check")
     stress = commands.add_parser("load")
     stress.add_argument("--requests", type=int, default=5, choices=range(1, 21))
     args = parser.parse_args(argv)
     if args.command in (None, "interactive"):
         start_services(reuse=True)
-        interactive(args.url)
+        interactive(args.url) if args.identity == "client" else interactive(args.url, identity=args.identity)
     elif args.command == "init":
         initialize()
     elif args.command == "submit":
         workflow = args.id or secrets.token_hex(16)
-        print(json.dumps(send_submission(args.url, {"id": workflow, "text": args.text}), indent=2))
-    elif args.command == "status":
-        print(json.dumps(request(args.url + "/status", credential("client"), {"id": args.id}), indent=2))
+        print(json.dumps(send_submission(args.url, {"id": workflow, "text": args.text}, identity=args.identity), indent=2))
+    elif args.command in ("status", "read"):
+        print(json.dumps(request(args.url + "/status", credential(args.identity), {"id": args.id}), indent=2))
     elif args.command == "check":
         check(args.url)
     elif args.command == "load":
         load(args.url, args.requests)
+    else:
+        from ssrsf.reference import ReferenceApp
+        app = ReferenceApp(args.url, identity=args.identity)
+        if args.command == "replace":
+            result = app.replace(args.id, args.version, args.text)
+        elif args.command == "approve":
+            targets = [(workflow, app.read(workflow)["version"]) for workflow in args.ids]
+            # Open exclusively before issuing a grant; never overwrite a saved capability.
+            with args.output.open("x", encoding="utf-8") as output:
+                try:
+                    os.fchmod(output.fileno(), 0o600)
+                    result = app.approve(targets, operation=args.operation, ttl=args.ttl)
+                    json.dump(result, output, indent=2)
+                except Exception:
+                    args.output.unlink()
+                    raise
+        elif args.command == "purge":
+            result = app.purge(json.loads(args.grant.read_text()))
+        elif args.command == "investigate":
+            result = app.investigate(args.operation)
+        elif args.command == "report":
+            result = app.report()
+        elif args.command == "telemetry":
+            result = app.telemetry(detailed=args.detailed, after=args.after, limit=args.limit)
+        elif args.command == "audit":
+            result = app.audit(json.loads(args.receipt.read_text()) if args.receipt else None)
+        elif args.command == "budget":
+            result = app.budget(owner=args.owner, reset=args.reset)
+        elif args.command == "deploy":
+            result = app.deploy(json.loads(args.rules.read_text()), change_id=args.change_id)
+        elif args.command == "tamper":
+            body = {"id": secrets.token_hex(16), "text": args.text}
+            signature = sign_event({"path": "/submit", "body": body}, app.token.encode())
+            try:
+                app_body = {**body, "text": args.text + " altered"}
+                request(app.url + "/submit", app.token, app_body, signature=signature)
+            except RemoteError as exc:
+                if exc.status != 403:
+                    raise
+                result = {"tampering_rejected": True}
+            else:
+                raise RuntimeError("Altered event was accepted")
+        print(json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":
