@@ -1,4 +1,4 @@
-"""Interactive input, failure recovery and exact retry behavior for the client."""
+"""Focused document input, status lookup and startup behavior."""
 import contextlib
 import io
 import json
@@ -16,28 +16,29 @@ RESULT = {"id": "workflow-id", "state": "complete", "label": "short", "text": "h
 class InteractivePrototypeTests(unittest.TestCase):
     def run_menu(self, answers):
         output = io.StringIO()
-        with contextlib.redirect_stdout(output), patch("builtins.input", side_effect=answers):
+        with contextlib.redirect_stdout(output), patch("builtins.input", side_effect=answers), \
+                patch.object(cli, "start_services") as start:
             cli.main([])
+        start.assert_called_once_with(reuse=True)
         return output.getvalue()
 
-    def test_default_menu_quits_without_initializing_or_dispatching(self):
+    def test_document_menu_quits_without_dispatching(self):
         with patch.object(cli, "initialize") as initialize, patch.object(cli, "request") as request:
             output = self.run_menu(["0"])
         initialize.assert_not_called()
         request.assert_not_called()
         self.assertIn("Enter document text", output)
 
-    def test_invalid_input_then_submit_status_and_exact_retry(self):
+    def test_invalid_input_then_submit_and_status(self):
         with patch.object(cli, "credential", return_value="client-token"), \
                 patch.object(cli.secrets, "token_hex", return_value="workflow-id"), \
                 patch.object(cli, "request", return_value=RESULT) as request, \
                 patch.object(cli, "wait_complete", return_value=RESULT):
-            output = self.run_menu(["2", "", "2", "x" * 129, "2", "hello document", "4", "", "5", "0"])
+            output = self.run_menu(["1", "", "1", "x" * 129, "", "hello document", "3", "", "0"])
         body = {"id": "workflow-id", "text": "hello document"}
         self.assertEqual(request.call_args_list, [
             call("http://127.0.0.1:8080/submit", "client-token", body),
-            call("http://127.0.0.1:8080/status", "client-token", {"id": "workflow-id"}),
-            call("http://127.0.0.1:8080/submit", "client-token", body)])
+            call("http://127.0.0.1:8080/status", "client-token", {"id": "workflow-id"})])
         self.assertIn("1 to 128", output)
         self.assertIn("Classification: short", output)
         self.assertIn("Processed text: hello document", output)
@@ -51,47 +52,49 @@ class InteractivePrototypeTests(unittest.TestCase):
             with patch.object(cli, "credential", return_value="client-token"), \
                     patch.object(cli, "request") as request, \
                     patch.object(cli, "wait_complete", return_value=RESULT):
-                output = self.run_menu(["3", str(Path(directory) / "missing"),
-                                        "3", str(large), "3", str(valid), "0"])
+                output = self.run_menu(["2", str(Path(directory) / "missing"),
+                                        "2", str(large), "2", str(valid), "0"])
         self.assertEqual(request.call_count, 1)
         self.assertEqual(request.call_args.args[2]["text"], "hello café")
         self.assertIn("File not found", output)
 
-    def test_service_outage_retains_exact_submission_for_retry(self):
+    def test_service_outage_preserves_id_for_status_without_resubmitting(self):
         with patch.object(cli, "credential", return_value="client-token"), \
-                patch.object(cli, "request", side_effect=[RemoteError(503, "offline"), {}]) as request, \
-                patch.object(cli, "wait_complete", return_value=RESULT):
-            output = self.run_menu(["2", "my input", "5", "0"])
-        self.assertEqual(request.call_args_list[0], request.call_args_list[1])
+                patch.object(cli.secrets, "token_hex", return_value="workflow-id"), \
+                patch.object(cli, "request", side_effect=[RemoteError(503, "offline"), RESULT]) as request:
+            output = self.run_menu(["1", "my input", "3", "", "0"])
+        self.assertEqual(request.call_args_list, [
+            call("http://127.0.0.1:8080/submit", "client-token", {"id": "workflow-id", "text": "my input"}),
+            call("http://127.0.0.1:8080/status", "client-token", {"id": "workflow-id"})])
         self.assertIn("Service unavailable", output)
         self.assertIn("Classification: short", output)
 
-    def test_cancelled_wait_retains_submission_and_menu_recovers(self):
+    def test_cancelled_wait_preserves_id_for_status(self):
         with patch.object(cli, "credential", return_value="client-token"), \
-                patch.object(cli, "request") as request, \
-                patch.object(cli, "wait_complete", side_effect=[KeyboardInterrupt, RESULT]):
-            output = self.run_menu(["2", "my input", "5", "0"])
-        self.assertEqual(request.call_args_list[0], request.call_args_list[1])
+                patch.object(cli, "request", return_value=RESULT) as request, \
+                patch.object(cli, "wait_complete", side_effect=KeyboardInterrupt):
+            output = self.run_menu(["1", "my input", "3", "", "0"])
+        self.assertEqual(request.call_args_list[0].args[2]["id"], request.call_args_list[1].args[2]["id"])
         self.assertIn("Action cancelled", output)
+        self.assertIn("Classification: short", output)
 
-    def test_actions_validate_load_count_and_preserve_state_on_stop(self):
-        with patch.object(cli, "initialize") as initialize, \
-                patch.object(cli.subprocess, "run") as run, \
-                patch.object(cli, "check") as check, patch.object(cli, "load") as load:
-            output = self.run_menu(["1", "6", "7", "invalid", "7", "21", "7", "2", "8", "0"])
-        initialize.assert_called_once()
-        check.assert_called_once_with("http://127.0.0.1:8080")
-        load.assert_called_once_with("http://127.0.0.1:8080", 2)
-        self.assertEqual(run.call_args_list, [
-            call(["docker", "compose", "up", "--build", "-d", "--wait"], cwd=cli.ROOT, check=True),
-            call(["docker", "compose", "down"], cwd=cli.ROOT, check=True)])
-        self.assertIn("Stored workflows and credentials are preserved", output)
+    def test_removed_actions_are_unavailable_and_never_run(self):
+        with patch.object(cli, "check") as check, patch.object(cli, "load") as load, \
+                patch.object(cli.subprocess, "run") as run, patch.object(cli, "request") as request:
+            output = self.run_menu(["4", "5", "6", "7", "8", "0"])
+        check.assert_not_called()
+        load.assert_not_called()
+        run.assert_not_called()
+        request.assert_not_called()
+        for label in ("Start services", "Retry last submission", "Run security checks", "Run a load test", "Stop services"):
+            self.assertNotIn(label, output)
+        self.assertIn("Choose a listed option", output)
 
     def test_eof_and_missing_last_submission_do_not_dispatch(self):
         with patch.object(cli, "request") as request:
-            output = self.run_menu(["5", "4", "", EOFError])
+            output = self.run_menu(["3", "", EOFError])
         request.assert_not_called()
-        self.assertIn("Submit a document before retrying", output)
+        self.assertIn("Enter a workflow ID or submit a document first", output)
         self.assertIn("Goodbye", output)
 
     def test_missing_docker_produces_actionable_startup_error(self):

@@ -62,7 +62,7 @@ class InteractiveCLI(unittest.TestCase):
 
     def test_user_can_process_document_then_run_experiments_in_one_session(self):
         result = {"id": "test-id", "state": "complete", "label": "short", "text": "my document"}
-        with patch("builtins.input", side_effect=["1", "2", "my document", "0", "2", *([""] * 5), "3"]), \
+        with patch("builtins.input", side_effect=["1", "1", "my document", "0", "2", *([""] * 5), "3"]), \
                 patch("ssrsf.prototype.client.start_services"), \
                 patch("ssrsf.prototype.client.credential", return_value="test-token"), \
                 patch("ssrsf.prototype.client.request") as request, \

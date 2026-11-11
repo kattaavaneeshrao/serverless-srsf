@@ -161,7 +161,7 @@ def load(url, count):
 
 
 def send_submission(url, body):
-    print("Workflow id (reuse on retry):", body["id"], flush=True)
+    print("Workflow ID:", body["id"], flush=True)
     request(url + "/submit", credential("client"), body)
     return wait_complete(url, body["id"])
 
@@ -184,24 +184,18 @@ def interactive(url, input_fn=None, *, return_to_main=False):
     ask = input_fn or input
     last = None
     print("Serverless SRSF — container workflow")
-    print("Start services with option 1 if they are not already running.")
     print("Documents accept 1–128 characters. The shared limit is 20 new workflows per minute.")
     while True:
-        print("\n1. Start services\n2. Enter document text\n3. Process a UTF-8 text file")
-        print("4. Check workflow status\n5. Retry last submission\n6. Run security checks")
-        print("7. Run a load test\n8. Stop services")
+        print("\n1. Enter document text\n2. Process a UTF-8 text file\n3. Check workflow status")
         print("0. Back to main menu" if return_to_main else "0. Quit")
         try:
-            choice = ask("Choose [2]: ").strip() or "2"
+            choice = ask("Choose [1]: ").strip() or "1"
             if choice in ("0", "q", "quit"):
                 print("Returning to the main menu. Services keep running." if return_to_main else
-                      "Goodbye. Services keep running unless you selected Stop services.")
+                      "Goodbye. Services keep running.")
                 return
-            if choice == "1":
-                start_services()
-                print("Services ready. Choose 2 to enter a document.")
-            elif choice in ("2", "3"):
-                if choice == "2":
+            if choice in ("1", "2"):
+                if choice == "1":
                     text = document_text(ask("Document text: "))
                 else:
                     path = ask("UTF-8 text file path: ").strip()
@@ -213,46 +207,28 @@ def interactive(url, input_fn=None, *, return_to_main=False):
                 # a response is lost or the user cancels the wait.
                 last = {"id": secrets.token_hex(16), "text": text}
                 show_workflow(send_submission(url, last))
-            elif choice == "4":
+            elif choice == "3":
                 suffix = " [last submission]" if last else ""
                 workflow = ask("Workflow ID" + suffix + ": ").strip()
                 workflow = workflow or (last["id"] if last else "")
                 if not workflow:
                     raise ValueError("Enter a workflow ID or submit a document first.")
                 show_workflow(request(url + "/status", credential("client"), {"id": workflow}))
-            elif choice == "5":
-                if last is None:
-                    raise ValueError("Submit a document before retrying.")
-                show_workflow(send_submission(url, last))
-            elif choice == "6":
-                check(url)
-            elif choice == "7":
-                raw = ask("Number of workflows, 1–20 [5]: ").strip() or "5"
-                try:
-                    count = int(raw)
-                except ValueError:
-                    raise ValueError("Enter a whole number from 1 to 20.") from None
-                if not 1 <= count <= 20:
-                    raise ValueError("Enter a whole number from 1 to 20.")
-                load(url, count)
-            elif choice == "8":
-                subprocess.run(["docker", "compose", "down"], cwd=ROOT, check=True)
-                print("Services stopped. Stored workflows and credentials are preserved.")
             else:
-                print("Choose a listed option (0–8).")
+                print("Choose a listed option (0–3).")
         except EOFError:
             print("\nGoodbye. Services keep running.")
             return
         except KeyboardInterrupt:
-            print("\nAction cancelled. Submitted workflows may still finish; use status or retry.")
+            print("\nAction cancelled. Submitted workflows may still finish; check workflow status.")
         except RemoteError as exc:
             if exc.status >= 500:
-                print("Service unavailable or still processing. Start services with option 1, then check status or retry.")
+                print("Service unavailable or still processing. Return to the main menu and reopen Document workflow, then check status.")
             else:
                 print("Request rejected:", exc)
         except FileNotFoundError as exc:
             if exc.filename and str(SECRETS) in str(exc.filename):
-                print("Credentials are missing. Choose 1 to initialize and start services.")
+                print("Credentials are missing. Return to the main menu and reopen Document workflow.")
             elif exc.filename == "docker":
                 print("Docker was not found. Install/start Docker Desktop and try again.")
             else:
@@ -267,7 +243,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default="http://127.0.0.1:8080")
     commands = parser.add_subparsers(dest="command")
-    commands.add_parser("interactive", help="Open the document and service menu (default)")
+    commands.add_parser("interactive", help="Open the document menu (default)")
     commands.add_parser("init")
     submit = commands.add_parser("submit")
     submit.add_argument("text")
@@ -279,6 +255,7 @@ def main(argv=None):
     stress.add_argument("--requests", type=int, default=5, choices=range(1, 21))
     args = parser.parse_args(argv)
     if args.command in (None, "interactive"):
+        start_services(reuse=True)
         interactive(args.url)
     elif args.command == "init":
         initialize()

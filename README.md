@@ -28,66 +28,32 @@ After `python3 -m pip install -e .`, `ssrsf` opens the same menu:
 
 - **1 — Document workflow:** automatically initializes missing credentials and starts or reuses the Docker Compose services, then opens the document controls. Have Docker Desktop/Engine running first.
 - **2 — Experiments:** prompts for which of the seven experiments to run, trials, seed, modeled price and output folder. This mode needs Python only and does not start Docker.
-- **3 — Quit:** exits the application. Already running containers remain available until stopped from the document controls.
+- **3 — Quit:** exits the application. Already running containers remain available until stopped with `docker compose down`.
 
 Both activities return to this main menu when finished. Press Enter to select Document workflow. A Docker startup failure returns to the menu so Experiments remains available. Ctrl+C cancels the current activity; end of input exits. Use `results-demo` as the experiment output folder to preserve the retained `results/` bundle.
 
 ## Docker workflow: step by step
 
-This walkthrough follows the current Docker-backed document mode. Numbered choices in steps 3–12 refer to the document submenu, not the main menu. Transcript excerpts show selected fields; generated IDs and timings vary. Follow the same sequence in the presentation.
+### Step 1: start the application
 
-### Step 1: application startup
-
-**From the repository root, with Docker Desktop running**
+With Python 3.11+ installed and Docker Desktop running, run from the repository root:
 
 ```bash
 PYTHONPATH=src python3 -m ssrsf
 ```
 
-**Main menu**
+Choose **1 — Document workflow** at the main menu. Services start automatically; healthy services are reused.
+
+### Step 2: submit a document and see the result
+
+At the document menu, choose **1** or press Enter:
 
 ```text
-1. Document workflow
-2. Experiments
-3. Quit
-```
-
-- Python 3.11+ opens the host interface. Document mode uses Linux containers and Docker Compose.
-
-- Keep this terminal open for the demonstration. All following numbered inputs go into this application.
-
-### Step 2: automatic service preparation
-
-**Main-menu input**
-
-```text
-Choose an activity [1]: 1
-```
-
-**Selected output when healthy services already run**
-
-```text
-Preparing document services...
-Document services are already running.
-Serverless SRSF - container workflow
-```
-
-- The application creates missing credentials and checks the five Compose services. Healthy services are reused without rebuilding.
-
-- Otherwise it builds and starts ingest, extract, classify, guard and controller, then opens document controls.
-
-- A startup error returns to the main menu. Experiments remain available without Docker.
-
-### Step 3: typed document input
-
-**Document-menu input**
-
-```text
-Choose [2]: 2
+Choose [1]: 1
 Document text: My   document about serverless security
 ```
 
-**Selected completed output**
+The workflow runs ingest → extract → classify and displays:
 
 ```text
 Workflow: <generated workflow ID>
@@ -96,178 +62,22 @@ Classification: short
 Processed text: My document about serverless security
 ```
 
-- The client prints the workflow ID before dispatch. Keep it to retrieve status later.
+Input accepts 1–128 characters. Whitespace is normalized; ten or more words produces `long`, otherwise `short`.
 
-- Spaces are normalized. Each submission creates its own workflow rather than replacing a shared document slot.
+To process a file instead, choose **2** and enter the path to a UTF-8 text file containing 1–128 characters.
 
-### Step 4: guarded processing stages
+### Step 3: check a previous result
 
-| Stage | What happens after submission |
-| --- | --- |
-| Admission | Guard authenticates the client. Controller checks the ID, bounded text and shared quota. |
-| Ingest | Worker claims its stage and returns the input under a controller-issued task grant. |
-| Extract | Worker normalizes whitespace, then completes only its assigned extraction task. |
-| Classify | Worker returns `long` for at least ten words, otherwise `short`. |
-| Complete | Controller retains the outcome. Client displays the normalized text and label. |
-
-The controller checks workflow, version, stage, input hash and grant expiry. Each transition commits with its outcome and audit record.
-
-### Step 5: UTF-8 file input
-
-**Prepare a short text file with your editor**
-
-Save `demo.txt` in the repository root, containing:
+Choose **3**, then press Enter for the most recent submission or paste a saved workflow ID:
 
 ```text
-A document about serverless security
-```
-
-**Document-menu input**
-
-```text
-Choose [2]: 3
-UTF-8 text file path: demo.txt
-```
-
-- Relative paths use the terminal's working directory. An absolute file path also works.
-
-- Input accepts 1–128 characters, including newlines. A bounded read rejects oversized files before submission.
-
-- A completed result shows a new workflow ID, normalized file text and its classification.
-
-### Step 6: workflow status
-
-**Document-menu input: press Enter at the ID prompt**
-
-```text
-Choose [2]: 4
+Choose [1]: 3
 Workflow ID [last submission]:
 ```
 
-- Empty ID input selects the most recent submission in this document session.
+### Step 4: return to the main menu
 
-- To inspect earlier work, paste its saved workflow ID instead.
-
-- Completed status shows its text and label. An unfinished workflow reports its current stage.
-
-- The shortcut is session-local. Saved workflow IDs remain usable after reopening the menu or restarting services.
-
-### Step 7: safe submission retry
-
-**Document-menu input**
-
-```text
-Choose [2]: 5
-```
-
-**What to compare with the previous result**
-
-- The workflow ID and submitted text stay identical. The client does not create a second workflow.
-
-- If processing already completed, the controller returns the retained submission and completion outcome.
-
-- Use this after a lost response or cancelled wait. Already admitted work can continue independently.
-
-- Retries of the same submission do not consume a new quota slot. An ID reused with different text is rejected by the API.
-
-### Step 8: invalid input and cancellation
-
-**Try an empty document: press Enter after the text prompt**
-
-```text
-Choose [2]: 2
-Document text:
-```
-
-**Result**
-
-The menu reports that input must contain 1–128 characters. It does not submit the empty document.
-
-- Text above 128 characters, oversized files and missing files also return an error without leaving the menu.
-
-- Ctrl+C cancels the current action. It cannot undo a request already admitted by the controller.
-
-- Check status or retry the preserved last submission to resolve an uncertain outcome.
-
-### Step 9: live security checks
-
-**Document-menu input**
-
-```text
-Choose [2]: 6
-```
-
-**Selected output from a passing run**
-
-```text
-Worker boundary verified
-Worker boundary verified
-Worker boundary verified
-```
-
-- The check submits a document, verifies an identical submission and rejects forged or forbidden API operations.
-
-- It probes every worker for absent storage and other credentials, and blocked direct TCP paths to the controller and selected destinations.
-
-- A final success message confirms the configured checks. This is separate from the seven research experiments.
-
-### Step 10: a small load test
-
-**Document-menu input**
-
-```text
-Choose [2]: 7
-Number of workflows, 1-20 [5]: 5
-```
-
-- The client submits five fixture documents using up to four concurrent clients and waits for their results.
-
-- The report gives `submitted`, `completed`, `median_seconds` and per-request observations.
-
-- A fully completed five-request run reports `completed: 5`. Timing varies with the host and running services.
-
-- This shares the 20-new-workflows-per-minute quota with manual input and security checks. Wait for the next minute boundary if exhausted.
-
-### Step 11: service stop and restart
-
-**Document-menu input and selected output**
-
-```text
-Choose [2]: 8
-Services stopped. Stored workflows and credentials are preserved.
-```
-
-**Restart from the same document menu**
-
-```text
-Choose [2]: 1
-```
-
-- Stop runs `docker compose down`. It preserves the named SQLite volume and credential files.
-
-- Start prepares the services again. Use option 4 with a saved ID to retrieve a retained workflow.
-
-- Quota counters persist across restart. Stopping services does not reset the minute's allowance.
-
-### Step 12: return to the main menu
-
-**Document-menu input**
-
-```text
-Choose [2]: 0
-```
-
-**Main menu appears again**
-
-```text
-1. Document workflow
-2. Experiments
-3. Quit
-```
-
-- Choose 2 for the experiment walkthrough that follows. There is no need to restart the application.
-
-- Returning leaves services running unless you stopped them in step 11. Main-menu option 3 exits the application.
+Choose **0**. From the main menu, choose **2** for experiments or **3** to quit. Services keep running. To stop them, run `docker compose down` in a terminal; stored workflows and credentials are preserved.
 
 ## Container workflow prototype
 
@@ -277,32 +87,18 @@ Requirements: Python 3.11+, Docker Engine/Desktop running Linux containers, and 
 PYTHONPATH=src python3 -m ssrsf
 ```
 
-Start Docker Desktop and choose **1 — Document workflow** from the main menu. The application prepares services automatically; then choose **2** or press Enter in the document controls to type your text. The document submenu also provides a Start services action for restarting after an explicit stop. The client runs on your host and sends requests through the guard; entering text does not require rebuilding containers.
+Start Docker Desktop and choose **1 — Document workflow** from the main menu. The application prepares services automatically. The host client sends documents through the guard; entering text does not require rebuilding containers.
 
 | Choice | Action | Input or result |
 |---|---|---|
-| **1** | Start services | Creates missing credentials and runs Compose; preserves existing credentials/state |
-| **2** or **Enter** | Enter document text | Type 1–128 characters; see workflow ID, state, classification and processed text |
-| **3** | Process a UTF-8 text file | Enter its path; reads at most 129 characters to detect oversized input |
-| **4** | Check workflow status | Enter an ID, or press Enter to use your last submission |
-| **5** | Retry last submission | Reuses its exact workflow ID and text |
-| **6** | Run security checks | Executes the existing API and worker-boundary checks |
-| **7** | Run a load test | Enter 1–20 workflows; Enter selects 5 |
-| **8** | Stop services | Stops containers while preserving stored workflows and credentials |
-| **0** | Back to main menu | Returns to the Document / Experiments menu; leaves services running |
+| **1** or **Enter** | Enter document text | Type 1–128 characters; see the workflow ID, state, classification and processed text |
+| **2** | Process a UTF-8 text file | Enter its path; oversized files are rejected before submission |
+| **3** | Check workflow status | Enter an ID, or press Enter to use your last submission |
+| **0** | Back to main menu | Returns to the Document / Experiments menu |
 
-For example, choose **2** and type `My   document about interactive serverless security`. A completed result shows:
+Inputs are UTF-8 text, including newlines, with a 128-character limit. Empty or oversized input is rejected before submission. PDF and Word files are not accepted.
 
-```text
-Workflow: <generated workflow ID>
-State: complete
-Classification: short
-Processed text: My document about interactive serverless security
-```
-
-Whitespace is normalized. At least ten words produces `long`; fewer produces `short`. Inputs are bounded UTF-8 text, not PDF, Word or arbitrary file uploads. File newlines count toward the input limit. Empty or oversized input is rejected before submission.
-
-Ctrl+C cancels the current action and returns to the menu; it does not roll back an already submitted workflow. Check status or retry to resolve its result. End of input exits the session. The last-submission shortcut lasts only for the current console session, so retain the printed ID to check a workflow after reopening. When services are unavailable, the menu reports the failure and remains available for startup or retry. Starting services still requires a running Docker engine and access to the image registry on the first build.
+Ctrl+C cancels the current action; admitted workflows can still finish. Check status using the printed workflow ID to resolve an uncertain outcome. The last-submission shortcut lasts for the current document session, so save the ID to retrieve it later. If services are unavailable, return to the main menu and reopen Document workflow to prepare them again. End of input exits the session. Starting services requires a running Docker engine and access to the image registry on the first build.
 
 `python3 scripts/prototype.py` and its `interactive` alias also open the unified main menu for compatibility. Existing scripted commands remain available:
 
@@ -429,7 +225,7 @@ The application controls live directly in `src/ssrsf/`; controlled threat fixtur
 
 ## Experiments: step by step
 
-After document step 12, continue from the same main menu. Experiments use their own constructed fixtures and can run with Docker stopped. This sequence runs all seven groups into `results-demo`, preserving the retained `results/` bundle.
+After document step 4, continue from the same main menu. Experiments use their own constructed fixtures and can run with Docker stopped. This sequence runs all seven groups into `results-demo`, preserving the retained `results/` bundle.
 
 ### Step 1: activity selection
 
@@ -598,7 +394,7 @@ The required stack is Python, Docker with Linux containers and Compose. SQLite i
 The recorded Python validation contains **95 passing tests**, including ten controller/HTTP tests and ten interactive-client tests. Main-menu tests also cover automatic startup, return navigation, Docker failures and switching between document processing and experiments. Separate live Compose checks confirmed:
 
 - A complete ingest/extract/classify workflow and idempotent submission.
-- Interactive typed input, normalized output, status lookup and retry with the same workflow ID.
+- Typed input, normalized output and status lookup; scripted retry with the same workflow ID.
 - Rejection of forged credentials, forbidden roles and conflicting submissions.
 - All three workers lacked database access and other services' mounted credentials.
 - Worker TCP probes to the controller by name and IP, a sibling and a selected external IP failed.
