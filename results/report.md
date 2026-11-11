@@ -4,7 +4,7 @@ Article: [Serverless computing: a security perspective](https://doi.org/10.1186/
 
 The article is a review with qualitative comparisons and countermeasure suggestions. It supplies no numerical benchmark results to reproduce. These are newly measured local experiments, with explicitly constructed workloads.
 
-Run: 2026-11-11T07:00:00.158929+00:00; 30 trials; seed 42; Python 3.14.8.
+Run: 2026-11-11T07:12:30.151010+00:00; 30 trials; seed 42; Python 3.14.8.
 
 Raw observations, configuration, machine details and source hashes are in `results.json`. `metrics.csv` contains aggregate rates/timings. Timings include initialization and vary by host. Binomial Wilson intervals are descriptive; repeated fixtures and correlated buckets do not establish population effectiveness.
 
@@ -16,8 +16,8 @@ Execution: executed local event consumer.
 
 | Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |
 |---|---|---|---|
-| unchecked | 150/150 (100.0%; 95% CI 97.5–100.0%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 0.000 / 0.001 |
-| validated-signed | 0/150 (0.0%; 95% CI 0.0–2.5%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 0.004 / 0.030 |
+| unchecked | 150/150 (100.0%; 95% CI 97.5–100.0%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 0.000 / 0.000 |
+| validated-signed | 0/150 (0.0%; 95% CI 0.0–2.5%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 0.004 / 0.005 |
 
 Limits:
 
@@ -48,8 +48,8 @@ Execution: executed file integrity experiment.
 
 | Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |
 |---|---|---|---|
-| hash-locked-inventory | 0/60 (0.0%; 95% CI 0.0–6.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.115 / 0.437 |
-| untracked | 60/60 (100.0%; 95% CI 94.0–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.019 / 0.100 |
+| hash-locked-inventory | 0/60 (0.0%; 95% CI 0.0–6.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.096 / 0.181 |
+| untracked | 60/60 (100.0%; 95% CI 94.0–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.017 / 0.041 |
 
 Limits:
 
@@ -64,9 +64,9 @@ Execution: real subprocesses and temporary filesystem.
 
 | Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |
 |---|---|---|---|
-| fresh-workspace | 0/30 (0.0%; 95% CI 0.0–11.4%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 61.046 / 87.242 |
-| warm-monitored | 0/30 (0.0%; 95% CI 0.0–11.4%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 29.327 / 39.086 |
-| warm-unchecked | 30/30 (100.0%; 95% CI 88.6–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 31.475 / 92.131 |
+| fresh-workspace | 0/30 (0.0%; 95% CI 0.0–11.4%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 57.705 / 88.547 |
+| warm-monitored | 0/30 (0.0%; 95% CI 0.0–11.4%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 28.914 / 40.897 |
+| warm-unchecked | 30/30 (100.0%; 95% CI 88.6–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 28.883 / 38.182 |
 
 Limits:
 
@@ -85,8 +85,8 @@ Attacker training and testing use different calls. Both splits contain equal num
 
 | Variant | Trace role accuracy | Held-out timing role accuracy | Response p50 / p95 (ms) |
 |---|---|---|---|
-| exposed | 60/60 (100.0%; 95% CI 94.0–100.0%) | 60/60 (100.0%; 95% CI 94.0–100.0%) | 2.262 / 3.844 |
-| uniform-workflow | 30/60 (50.0%; 95% CI 37.7–62.3%) | 28/60 (46.7%; 95% CI 34.6–59.1%) | 5.009 / 5.096 |
+| exposed | 60/60 (100.0%; 95% CI 94.0–100.0%) | 58/60 (96.7%; 95% CI 88.6–99.1%) | 3.162 / 4.797 |
+| uniform-workflow | 30/60 (50.0%; 95% CI 37.7–62.3%) | 30/60 (50.0%; 95% CI 37.7–62.3%) | 5.022 / 5.065 |
 
 Uniform-workflow hides branch names and executes the same schedule for both roles. Timing remains a measured inference result, not a guarantee against all side channels.
 
@@ -106,8 +106,8 @@ Execution: concurrent calls to a partially updated local replica pool.
 
 | Variant | Attack acceptance/success | Legitimate completion | Trial p50 / p95 (ms) |
 |---|---|---|---|
-| current-policy-gate | 0/30 (0.0%; 95% CI 0.0–11.4%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.253 / 0.398 |
-| rolling-stale-replicas | 30/30 (100.0%; 95% CI 88.6–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.257 / 0.735 |
+| current-policy-gate | 0/30 (0.0%; 95% CI 0.0–11.4%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.408 / 0.632 |
+| rolling-stale-replicas | 30/30 (100.0%; 95% CI 88.6–100.0%) | 30/30 (100.0%; 95% CI 88.6–100.0%) | 0.399 / 0.857 |
 
 Limits:
 

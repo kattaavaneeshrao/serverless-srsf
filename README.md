@@ -32,6 +32,243 @@ After `python3 -m pip install -e .`, `ssrsf` opens the same menu:
 
 Both activities return to this main menu when finished. Press Enter to select Document workflow. A Docker startup failure returns to the menu so Experiments remains available. Ctrl+C cancels the current activity; end of input exits. Use `results-demo` as the experiment output folder to preserve the retained `results/` bundle.
 
+## Docker workflow: step by step
+
+This walkthrough follows the current Docker-backed document mode. Numbered choices in steps 3–12 refer to the document submenu, not the main menu. Transcript excerpts show selected fields; generated IDs and timings vary. Follow the same sequence in the presentation.
+
+### Step 1: application startup
+
+**From the repository root, with Docker Desktop running**
+
+```bash
+PYTHONPATH=src python3 -m ssrsf
+```
+
+**Main menu**
+
+```text
+1. Document workflow
+2. Experiments
+3. Quit
+```
+
+- Python 3.11+ opens the host interface. Document mode uses Linux containers and Docker Compose.
+
+- Keep this terminal open for the demonstration. All following numbered inputs go into this application.
+
+### Step 2: automatic service preparation
+
+**Main-menu input**
+
+```text
+Choose an activity [1]: 1
+```
+
+**Selected output when healthy services already run**
+
+```text
+Preparing document services...
+Document services are already running.
+Serverless SRSF - container workflow
+```
+
+- The application creates missing credentials and checks the five Compose services. Healthy services are reused without rebuilding.
+
+- Otherwise it builds and starts ingest, extract, classify, guard and controller, then opens document controls.
+
+- A startup error returns to the main menu. Experiments remain available without Docker.
+
+### Step 3: typed document input
+
+**Document-menu input**
+
+```text
+Choose [2]: 2
+Document text: My   document about serverless security
+```
+
+**Selected completed output**
+
+```text
+Workflow: <generated workflow ID>
+State: complete
+Classification: short
+Processed text: My document about serverless security
+```
+
+- The client prints the workflow ID before dispatch. Keep it to retrieve status later.
+
+- Spaces are normalized. Each submission creates its own workflow rather than replacing a shared document slot.
+
+### Step 4: guarded processing stages
+
+| Stage | What happens after submission |
+| --- | --- |
+| Admission | Guard authenticates the client. Controller checks the ID, bounded text and shared quota. |
+| Ingest | Worker claims its stage and returns the input under a controller-issued task grant. |
+| Extract | Worker normalizes whitespace, then completes only its assigned extraction task. |
+| Classify | Worker returns `long` for at least ten words, otherwise `short`. |
+| Complete | Controller retains the outcome. Client displays the normalized text and label. |
+
+The controller checks workflow, version, stage, input hash and grant expiry. Each transition commits with its outcome and audit record.
+
+### Step 5: UTF-8 file input
+
+**Prepare a short text file with your editor**
+
+Save `demo.txt` in the repository root, containing:
+
+```text
+A document about serverless security
+```
+
+**Document-menu input**
+
+```text
+Choose [2]: 3
+UTF-8 text file path: demo.txt
+```
+
+- Relative paths use the terminal's working directory. An absolute file path also works.
+
+- Input accepts 1–128 characters, including newlines. A bounded read rejects oversized files before submission.
+
+- A completed result shows a new workflow ID, normalized file text and its classification.
+
+### Step 6: workflow status
+
+**Document-menu input: press Enter at the ID prompt**
+
+```text
+Choose [2]: 4
+Workflow ID [last submission]:
+```
+
+- Empty ID input selects the most recent submission in this document session.
+
+- To inspect earlier work, paste its saved workflow ID instead.
+
+- Completed status shows its text and label. An unfinished workflow reports its current stage.
+
+- The shortcut is session-local. Saved workflow IDs remain usable after reopening the menu or restarting services.
+
+### Step 7: safe submission retry
+
+**Document-menu input**
+
+```text
+Choose [2]: 5
+```
+
+**What to compare with the previous result**
+
+- The workflow ID and submitted text stay identical. The client does not create a second workflow.
+
+- If processing already completed, the controller returns the retained submission and completion outcome.
+
+- Use this after a lost response or cancelled wait. Already admitted work can continue independently.
+
+- Retries of the same submission do not consume a new quota slot. An ID reused with different text is rejected by the API.
+
+### Step 8: invalid input and cancellation
+
+**Try an empty document: press Enter after the text prompt**
+
+```text
+Choose [2]: 2
+Document text:
+```
+
+**Result**
+
+The menu reports that input must contain 1–128 characters. It does not submit the empty document.
+
+- Text above 128 characters, oversized files and missing files also return an error without leaving the menu.
+
+- Ctrl+C cancels the current action. It cannot undo a request already admitted by the controller.
+
+- Check status or retry the preserved last submission to resolve an uncertain outcome.
+
+### Step 9: live security checks
+
+**Document-menu input**
+
+```text
+Choose [2]: 6
+```
+
+**Selected output from a passing run**
+
+```text
+Worker boundary verified
+Worker boundary verified
+Worker boundary verified
+```
+
+- The check submits a document, verifies an identical submission and rejects forged or forbidden API operations.
+
+- It probes every worker for absent storage and other credentials, and blocked direct TCP paths to the controller and selected destinations.
+
+- A final success message confirms the configured checks. This is separate from the seven research experiments.
+
+### Step 10: a small load test
+
+**Document-menu input**
+
+```text
+Choose [2]: 7
+Number of workflows, 1-20 [5]: 5
+```
+
+- The client submits five fixture documents using up to four concurrent clients and waits for their results.
+
+- The report gives `submitted`, `completed`, `median_seconds` and per-request observations.
+
+- A fully completed five-request run reports `completed: 5`. Timing varies with the host and running services.
+
+- This shares the 20-new-workflows-per-minute quota with manual input and security checks. Wait for the next minute boundary if exhausted.
+
+### Step 11: service stop and restart
+
+**Document-menu input and selected output**
+
+```text
+Choose [2]: 8
+Services stopped. Stored workflows and credentials are preserved.
+```
+
+**Restart from the same document menu**
+
+```text
+Choose [2]: 1
+```
+
+- Stop runs `docker compose down`. It preserves the named SQLite volume and credential files.
+
+- Start prepares the services again. Use option 4 with a saved ID to retrieve a retained workflow.
+
+- Quota counters persist across restart. Stopping services does not reset the minute's allowance.
+
+### Step 12: return to the main menu
+
+**Document-menu input**
+
+```text
+Choose [2]: 0
+```
+
+**Main menu appears again**
+
+```text
+1. Document workflow
+2. Experiments
+3. Quit
+```
+
+- Choose 2 for the experiment walkthrough that follows. There is no need to restart the application.
+
+- Returning leaves services running unless you stopped them in step 11. Main-menu option 3 exits the application.
+
 ## Container workflow prototype
 
 Requirements: Python 3.11+, Docker Engine/Desktop running Linux containers, and Docker Compose v2+. No Python packages beyond the standard library are needed. Run from the repository root:
@@ -189,6 +426,116 @@ assert app.audit.verify()
 Keys, documents and accepted policy history persist in the state directory. Startup verifies audit integrity and refuses existing databases with missing keys. An exit-audit failure can leave a committed operation with an evidence gap; the broker supports read-only reconciliation.
 
 The application controls live directly in `src/ssrsf/`; controlled threat fixtures and worker processes live in [`experiments/`](src/ssrsf/experiments/). [`evaluation.py`](src/ssrsf/evaluation.py) runs them, [`evidence.py`](src/ssrsf/evidence.py) defines the source inventory, and `scripts/` validates retained results.
+
+## Experiments: step by step
+
+After document step 12, continue from the same main menu. Experiments use their own constructed fixtures and can run with Docker stopped. This sequence runs all seven groups into `results-demo`, preserving the retained `results/` bundle.
+
+### Step 1: activity selection
+
+**From the main menu after the Docker demonstration**
+
+```text
+Choose an activity [1]: 2
+```
+
+**Selected output**
+
+```text
+Serverless SRSF - guided evaluation
+```
+
+- This activity runs the seven built-in Python experiments. Docker may be stopped for this part.
+
+- Each experiment supplies its own paired fixtures. Your document from the Docker demonstration is not its input.
+
+- If starting a fresh terminal, run `PYTHONPATH=src python3 -m ssrsf`, then choose 2.
+
+### Step 2: group selection
+
+| Number | Group |
+| --- | --- |
+| 1 / 2 / 3 | Events / authorization / dependencies |
+| 4 / 5 | Persistence / side channels |
+| 6 / 7 | Rollouts / billing |
+
+- At the experiment-selection prompt, enter `all` for the complete seven-group demonstration.
+
+- A subset such as `1,4,7` or `events,persistence,billing` runs only those groups.
+
+- The runner rejects unknown or duplicate selections and prompts again.
+
+### Step 3: trials and seed
+
+**Inputs after selecting `all`**
+
+```text
+Trials per case (2-200) [30]: 30
+Random seed (0-4294967295) [42]: 42
+```
+
+- Trials control repetitions per fixture case. Valid values are 2–200; 30 matches the retained evaluation configuration.
+
+- The seed fixes generated inputs and ordering. It does not fix execution time or timing-inference accuracy.
+
+- Enter accepts each displayed default. Invalid numbers produce another prompt.
+
+### Step 4: modeled price and output
+
+| Prompt | Example input | Effect |
+| --- | --- | --- |
+| Modeled invocation cost | `0.000001` | Sets arbitrary cost units per accepted billing-fixture invocation |
+| Output folder | `results-demo` | Stores this demonstration's reports separately from retained evidence |
+
+- At the cost prompt, press Enter to accept its equivalent default, `1e-06`, or type the example value.
+
+- Type `results-demo` at the output prompt. Existing report files in the selected folder are replaced.
+
+- The run begins after the final output-folder answer. Ctrl+C or end of input during configuration cancels before it begins.
+
+### Step 5: execution and completion
+
+**Selected output for the complete demonstration**
+
+```text
+Running 7 experiments with 30 trials per case...
+Completed 7 local experiments. Report: results-demo/report.md
+```
+
+- The runner executes the selected vulnerable and protected variants against controlled fixtures.
+
+- It measures attack-fixture outcomes and legitimate completion separately. Billing uses synthetic time and modeled cost.
+
+- Completion writes the report bundle and returns to the main menu. These outcomes do not establish cloud-wide protection.
+
+### Step 6: result inspection
+
+**In a second terminal, from the same repository root**
+
+```bash
+cat results-demo/report.md
+```
+
+| File | What it contains |
+| --- | --- |
+| `report.md` | Findings, comparison tables and experiment limits |
+| `metrics.csv` | Aggregate rates, latency and descriptive intervals |
+| `results.json` | Observations, configuration, host details and source hashes |
+| `SHA256SUMS` | Checksums for the generated report files |
+
+This demonstration does not automatically create a new `validation.json`; the canonical validation script separately records the Python test suite.
+
+### Step 7: interpretation and next action
+
+- Compare attack acceptance and legitimate completion for events, permissions and artifacts. For persistence, compare marker survival and lifecycle time.
+
+- For side channels, inspect held-out inference accuracy. For rollouts, inspect revoked-reader admission.
+
+- For billing, compare accepted attack work, legitimate drops and modeled spend. Alerts and admission controls have different effects.
+
+- Back in the application, choose 2 to configure another run, 1 for document work or 3 to quit.
+
+**Document processing, live Docker checks and the seven controlled experiments have distinct inputs and evidence.**
 
 ## Experiments and results
 
