@@ -142,13 +142,13 @@ print('Worker boundary verified')
     print("Workflow, idempotency, authorization and worker boundaries passed.")
 
 
-def load(url, count):
+def load(url, count, *, identity="client"):
     def trial(i):
         workflow = "load-" + secrets.token_hex(8)
         start = time.monotonic()
         try:
-            request(url + "/submit", credential("client"), {"id": workflow, "text": "load test document"})
-            wait_complete(url, workflow)
+            request(url + "/submit", credential(identity), {"id": workflow, "text": "load test document"})
+            wait_complete(url, workflow) if identity == "client" else wait_complete(url, workflow, identity=identity)
             return {"completed": True, "seconds": time.monotonic() - start}
         except RemoteError as exc:
             return {"completed": False, "status": exc.status}
@@ -183,62 +183,21 @@ def document_text(value):
 
 
 def interactive(url, input_fn=None, *, return_to_main=False, identity="client"):
-    ask = input_fn or input
-    last = None
-    print("Serverless SRSF — reference app")
-    print("Documents accept 1–128 characters. The shared limit is 20 new workflows per minute.")
-    while True:
-        print("\n1. Enter document text\n2. Process a UTF-8 text file\n3. Check workflow status")
-        print("0. Back to main menu" if return_to_main else "0. Quit")
-        try:
-            choice = ask("Choose [1]: ").strip() or "1"
-            if choice in ("0", "q", "quit"):
-                print("Returning to the main menu. Services keep running." if return_to_main else
-                      "Goodbye. Services keep running.")
-                return
-            if choice in ("1", "2"):
-                if choice == "1":
-                    text = document_text(ask("Document text: "))
-                else:
-                    path = ask("UTF-8 text file path: ").strip()
-                    if not path:
-                        raise ValueError("Enter a file path.")
-                    with Path(path).expanduser().open(encoding="utf-8") as handle:
-                        text = document_text(handle.read(129))
-                # Preserve the ID and exact input before dispatch, including when
-                # a response is lost or the user cancels the wait.
-                last = {"id": secrets.token_hex(16), "text": text}
-                show_workflow(send_submission(url, last) if identity == "client" else send_submission(url, last, identity=identity))
-            elif choice == "3":
-                suffix = " [last submission]" if last else ""
-                workflow = ask("Workflow ID" + suffix + ": ").strip()
-                workflow = workflow or (last["id"] if last else "")
-                if not workflow:
-                    raise ValueError("Enter a workflow ID or submit a document first.")
-                show_workflow(request(url + "/status", credential(identity), {"id": workflow}))
-            else:
-                print("Choose a listed option (0–3).")
-        except EOFError:
-            print("\nGoodbye. Services keep running.")
-            return
-        except KeyboardInterrupt:
-            print("\nAction cancelled. Submitted workflows may still finish; check workflow status.")
-        except RemoteError as exc:
-            if exc.status >= 500:
-                print("Service unavailable or still processing. Return to the main menu and reopen Document workflow, then check status.")
-            else:
-                print("Request rejected:", exc)
-        except FileNotFoundError as exc:
-            if exc.filename and str(SECRETS) in str(exc.filename):
-                print("Credentials are missing. Return to the main menu and reopen Document workflow.")
-            elif exc.filename == "docker":
-                print("Docker was not found. Install/start Docker Desktop and try again.")
-            else:
-                print("File not found:", exc.filename or "check the supplied path")
-        except subprocess.CalledProcessError:
-            print("Docker operation failed. Check Docker Desktop and the service output, then try again.")
-        except (OSError, UnicodeError, ValueError, RuntimeError) as exc:
-            print("Could not complete this action:", exc)
+    from .menu import run
+    return run(url, input_fn, return_to_main=return_to_main, identity=identity)
+
+
+def tamper(url, identity, text):
+    body = {"id": secrets.token_hex(16), "text": text}
+    token = credential(identity)
+    signature = sign_event({"path": "/submit", "body": body}, token.encode())
+    try:
+        request(url.rstrip("/") + "/submit", token, {**body, "text": text + " altered"}, signature=signature)
+    except RemoteError as exc:
+        if exc.status != 403:
+            raise
+        return {"tampering_rejected": True}
+    raise RuntimeError("Altered event was accepted")
 
 
 def main(argv=None):
@@ -300,7 +259,7 @@ def main(argv=None):
     elif args.command == "check":
         check(args.url)
     elif args.command == "load":
-        load(args.url, args.requests)
+        load(args.url, args.requests) if args.identity == "client" else load(args.url, args.requests, identity=args.identity)
     else:
         from ssrsf.reference import ReferenceApp
         app = ReferenceApp(args.url, identity=args.identity)
@@ -332,17 +291,7 @@ def main(argv=None):
         elif args.command == "deploy":
             result = app.deploy(json.loads(args.rules.read_text()), change_id=args.change_id)
         elif args.command == "tamper":
-            body = {"id": secrets.token_hex(16), "text": args.text}
-            signature = sign_event({"path": "/submit", "body": body}, app.token.encode())
-            try:
-                app_body = {**body, "text": args.text + " altered"}
-                request(app.url + "/submit", app.token, app_body, signature=signature)
-            except RemoteError as exc:
-                if exc.status != 403:
-                    raise
-                result = {"tampering_rejected": True}
-            else:
-                raise RuntimeError("Altered event was accepted")
+            result = tamper(args.url, args.identity, args.text)
         print(json.dumps(result, indent=2))
 
 

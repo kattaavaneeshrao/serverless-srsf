@@ -91,13 +91,16 @@ Start Docker Desktop and choose **1 — Document workflow** from the main menu. 
 | Choice | Action | Input or result |
 |---|---|---|
 | **1** or **Enter** | Enter document text | Type 1–128 characters; see the workflow ID, state, classification and processed text |
-| **2** | Process a UTF-8 text file | Enter its path; oversized files are rejected before submission |
+| **2** | Process a UTF-8 text file | Enter its path; oversized files (>128 chars) are rejected before submission |
 | **3** | Check workflow status | Enter an ID, or press Enter to use your last submission |
+| **4** | Switch identity | Switch between `client` (standard user) and `admin` (privileged operator) |
+| **5** | Verify audit log | Cryptographically verify the SHA-256 HMAC audit log hash chain |
+| **6** | Check quota and security | Inspect remaining quota budget (20 req/min) and run container isolation checks |
 | **0** | Back to main menu | Returns to the Document / Experiments menu |
 
 Inputs are UTF-8 text, including newlines, with a 128-character limit. Empty or oversized input is rejected before submission. PDF and Word files are not accepted.
 
-Ctrl+C cancels the current action; admitted workflows can still finish. Check status using the printed workflow ID to resolve an uncertain outcome. The last-submission shortcut lasts for the current document session, so save the ID to retrieve it later. If services are unavailable, return to the main menu and reopen Document workflow to prepare them again. End of input exits the session. Starting services requires a running Docker engine and access to the image registry on the first build.
+Ctrl+C cancels the current action; admitted workflows can still finish. Check status using the printed workflow ID to resolve an uncertain outcome. The last-submission shortcut lasts for the current document session, so save the ID to retrieve it later. End of input exits the session. Starting services requires a running Docker engine and access to the image registry on the first build.
 
 `python3 scripts/prototype.py` and its `interactive` alias also open the unified main menu for compatibility. Existing scripted commands remain available:
 
@@ -130,21 +133,34 @@ Transitions, completion outcomes and authenticated audit records commit in the s
 
 `check` runs a real document, duplicate submission and forbidden API requests. It probes each running worker for absent storage/other credentials and denied direct TCP connections to the controller (by name and IP), a sibling and an external IP. `load` runs up to four concurrent clients and reports completion counts and observed latency. Transactional replay, grant substitution, concurrent completion, quota persistence, audit failure and lease recovery are also covered by `tests/test_prototype.py` using temporary databases and real loopback HTTP servers. These tests need permission to open local sockets.
 
-This is a single-host reference application with two fixture document owners, administrator/investigator roles and one identity per worker stage. A compromised worker can submit incorrect but schema-valid output for its assigned stage, consume tasks for that stage, or withhold completion; workflow order does not establish semantic correctness or availability. The guard, controller, Docker daemon, host and provisioned identities are trusted. Private-network HTTP is authenticated and signed but unencrypted. Direct TCP egress probes do not establish protection against every DNS/covert channel. The reference app does not provide syscall interception, TLS interception, distributed consensus or cloud/runtime isolation results. The reference app also enforces ownership, signed requests, approved deletion, policy checks and restricted telemetry; see the [reference-app guide](docs/reference-app.md).
+This is a single-host reference application with client and administrator roles and one identity per worker stage. A compromised worker can submit incorrect but schema-valid output for its assigned stage, consume tasks for that stage, or withhold completion; workflow order does not establish semantic correctness or availability. The guard, controller, Docker daemon, host and provisioned identities are trusted. Private-network HTTP is authenticated and signed but unencrypted. Direct TCP egress probes do not establish protection against every DNS/covert channel. The reference app does not provide syscall interception, TLS interception, distributed consensus or cloud/runtime isolation results. The reference app also enforces ownership, signed requests, rate-limiting quotas and cryptographic audit verification; see the [reference-app guide](docs/reference-app.md).
 
 Implementation: [`client.py`](src/ssrsf/prototype/client.py) supplies the host interface; [`src/ssrsf/prototype/`](src/ssrsf/prototype/), [`compose.yaml`](compose.yaml), [`scripts/prototype.py`](scripts/prototype.py). The existing seven-experiment reports remain scoped to their original fixtures; Compose verification is separate.
 
 ## Reference-app controls
 
-The Docker application is the reference app. Its focused document menu is backed by ownership checks, signed requests, image-source integrity, atomic audit records, worker scratch evidence and persistent quotas. Administrative commands add version-bound approval/purge, reconciliation, classification reports, exact policy deployment and restricted telemetry.
+The Docker application is the reference app. To keep day-to-day operations intuitive, the interactive menu provides **6 essential operational controls**:
 
-```bash
-PYTHONPATH=src python3 -m ssrsf reference --identity admin report
-PYTHONPATH=src python3 -m ssrsf reference audit
-PYTHONPATH=src python3 -m ssrsf reference tamper "Original document"
+- **1. Enter document text:** Accepts 1–128 characters of UTF-8 text and dispatches to `/submit`, returning the generated workflow ID.
+- **2. Process a UTF-8 text file:** Reads a UTF-8 text file up to 129 characters, cleanly rejecting oversized documents before transmission.
+- **3. Read document / check status:** Queries `/status` by workflow ID (or press Enter for this identity's last submission) to display state, version, owner, classification, and raw text.
+- **4. Switch identity:** Toggles between `client` (standard user) and `admin` (privileged operator), demonstrating role-based access control (RBAC) enforced by the guard and controller.
+- **5. Verify audit log:** Cryptographically verifies the controller's SHA-256 HMAC audit log hash chain to detect any log tampering or sequence omission.
+- **6. Check quota and security:** Inspects the current token-bucket budget (20 requests per minute limit) and executes automated worker boundary and tamper-rejection probes.
+- **0. Back to main menu:** Returns to the Document / Experiments top-level menu.
+
+Python callers can also import `ReferenceApp` from `ssrsf.reference` to interact programmatically with the running Docker stack:
+
+```python
+from ssrsf.reference import ReferenceApp
+
+app = ReferenceApp()
+result = app.ingest("My document about serverless security")
+status = app.read(result["id"])
+audit = app.audit()
 ```
 
-See the [reference-app guide](docs/reference-app.md) for identities, deletion grants, policies, quota controls and the Python API. After updating the source, run `python3 scripts/prototype.py init` and `docker compose up --build -d --wait` once to rebuild services and provision missing role credentials; existing state and credentials are preserved.
+See the [reference-app guide](docs/reference-app.md) for identities, quota controls, and the Python API. After updating the source, run `python3 scripts/prototype.py init` and `docker compose up --build -d --wait` once to rebuild services and provision missing role credentials; existing state and credentials are preserved.
 
 ## Experiments: step by step
 
@@ -308,23 +324,23 @@ The reference app separates processing from enforcement: workers request operati
 | Retry protection | Idempotent submission/completion and expiring stage grants |
 | Audit | Transition, outcome and audit commit in one transaction |
 | Quota | 20 submissions/replacements per client per fixed minute; persisted |
-| Management | Version-bound approval/purge, reconciliation, policy deployment and restricted telemetry |
+| Management | Six-choice interactive menu, identity switching (RBAC) and quota controls |
 
 The required stack is Python, Docker with Linux containers and Compose. SQLite is part of Python, and HTTP uses the standard library. No AWS account, Kubernetes cluster, gVisor installation or separate database server is required. Host and Docker administration remain trusted. The reference app is a single-host deployment; cloud deployment is outside its scope.
 
 ## Verified reference-app behavior
 
-The recorded Python validation contains **83 passing tests**, covering controller/HTTP behavior, the focused document menu and restored reference-app controls. Main-menu tests also cover automatic startup, return navigation, Docker failures and switching between document processing and experiments. Separate live Compose checks confirmed:
+The recorded Python validation contains **90 passing tests**, covering controller/HTTP behavior, the complete reference-app menu and restored reference-app controls. Main-menu tests also cover automatic startup, return navigation, Docker failures and switching between document processing and experiments. Separate live Compose checks confirmed:
 
 - A complete ingest/extract/classify workflow and idempotent submission.
 - Typed input, normalized output and status lookup; scripted retry with the same workflow ID.
 - Rejection of forged credentials, altered signed requests, forbidden roles and conflicting submissions.
-- Ownership checks, version replacement, exact-version approval/purge, replay rejection, read-only reconciliation, policy controls and privileged telemetry.
+- Ownership checks, identity-based access control, cryptographic audit logging and persistent quota enforcement.
 - Scratch entry/exit evidence, including a mismatch after an inert marker was added between invocations.
 - All three workers lacked database access and other services' mounted credentials.
 - Worker TCP probes to the controller by name and IP, a sibling and a selected external IP failed.
 - Five submitted workflows completed under a smoke load of up to four concurrent clients. The observed median was approximately **1.482 seconds** for that run.
-- A completed workflow, deletion outcome and valid audit chain survived a controller restart.
+- A completed workflow and valid audit chain survived a controller restart.
 
 These single-host observations are separate from the seven-experiment bundle. They are not a scalability study, a general egress guarantee or a comparative performance study. Run `check` and `load` to repeat the live checks; quota usage and host scheduling can affect results. CI includes a separate `container-prototype` job for these commands.
 

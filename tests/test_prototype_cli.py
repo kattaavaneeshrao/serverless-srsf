@@ -78,24 +78,20 @@ class InteractivePrototypeTests(unittest.TestCase):
         self.assertIn("Action cancelled", output)
         self.assertIn("Classification: short", output)
 
-    def test_removed_actions_are_unavailable_and_never_run(self):
-        with patch.object(cli, "check") as check, patch.object(cli, "load") as load, \
-                patch.object(cli.subprocess, "run") as run, patch.object(cli, "request") as request:
-            output = self.run_menu(["4", "5", "6", "7", "8", "0"])
-        check.assert_not_called()
-        load.assert_not_called()
-        run.assert_not_called()
+    def test_unrecognized_action_does_not_dispatch(self):
+        with patch.object(cli, "request") as request:
+            output = self.run_menu(["invalid", "20", "0"])
         request.assert_not_called()
-        for label in ("Start services", "Retry last submission", "Run security checks", "Run a load test", "Stop services"):
-            self.assertNotIn(label, output)
-        self.assertIn("Choose a listed option", output)
+        self.assertIn("Choose a listed option (0–6)", output)
+        self.assertIn("Verify audit log", output)
+        self.assertIn("Check quota and security", output)
 
     def test_eof_and_missing_last_submission_do_not_dispatch(self):
         with patch.object(cli, "request") as request:
             output = self.run_menu(["3", "", EOFError])
         request.assert_not_called()
         self.assertIn("Enter a workflow ID or submit a document first", output)
-        self.assertIn("Goodbye", output)
+        self.assertIn("Session ended", output)
 
     def test_missing_docker_produces_actionable_startup_error(self):
         with patch.object(cli, "initialize"), \
