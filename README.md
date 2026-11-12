@@ -330,7 +330,7 @@ The required stack is Python, Docker with Linux containers and Compose. SQLite i
 
 ## Verified reference-app behavior
 
-The recorded Python validation contains **90 passing tests**, covering controller/HTTP behavior, the complete reference-app menu and restored reference-app controls. Main-menu tests also cover automatic startup, return navigation, Docker failures and switching between document processing and experiments. Separate live Compose checks confirmed:
+The recorded Python validation contains **87 passing tests**, covering controller/HTTP behavior, the complete reference-app menu and restored reference-app controls. Main-menu tests also cover automatic startup, return navigation, Docker failures and switching between document processing and experiments. Separate live Compose checks confirmed:
 
 - A complete ingest/extract/classify workflow and idempotent submission.
 - Typed input, normalized output and status lookup; scripted retry with the same workflow ID.
