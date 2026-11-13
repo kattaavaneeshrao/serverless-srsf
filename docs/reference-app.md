@@ -33,7 +33,7 @@ No additional terminal commands are required after opening the app and selecting
 | **4** | Switch identity | Toggle between `client` (standard user) and `admin` (privileged operator); checks credentials locally and enforces RBAC |
 | **5** | Verify audit log | Cryptographically verifies the SHA-256 HMAC hash chain of audit records to detect log alteration or tail truncation |
 | **6** | Quota & security | Displays current 20-req/min token-bucket budget, then runs automated worker boundary isolation and tamper probes |
-| **0** | Back to main menu | Returns to the Document / Experiments activity menu |
+| **0** | Back to main menu | Returns to the Document / Control benchmarks activity menu |
 
 ## Identities and ownership
 

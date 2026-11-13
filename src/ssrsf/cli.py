@@ -47,9 +47,9 @@ def _experiments(value):
         if item.isdigit() and 1 <= int(item) <= len(EXPERIMENTS):
             item = EXPERIMENTS[int(item) - 1]
         if item not in EXPERIMENTS:
-            raise ValueError("Enter all, or experiment numbers/names separated by commas")
+            raise ValueError("Enter all, or control benchmark numbers/names separated by commas")
         if item in selected:
-            raise ValueError("Choose each experiment only once")
+            raise ValueError("Choose each control benchmark only once")
         selected.append(item)
     return selected
 
@@ -67,10 +67,10 @@ def _interactive(defaults=None):
                                       experiment=None, output=Path("results"))
     print("Serverless SRSF — guided evaluation")
     print("Press Enter to accept a default. Press Ctrl+C to cancel.")
-    print("Experiments use built-in test events and attack scenarios.")
+    print("Control benchmarks use built-in test events and attack scenarios.")
     for index, name in enumerate(EXPERIMENTS, 1):
         print(f"  {index}. {name}")
-    selected = _prompt("Experiments (all, or comma-separated numbers/names)",
+    selected = _prompt("Control benchmarks (all, or comma-separated numbers/names)",
                        ",".join(defaults.experiment) if defaults.experiment else "all", _experiments)
     trials = _prompt("Trials per case (2–200)", defaults.trials, lambda value: _integer(value, 2, 200))
     seed = _prompt("Random seed (0–4294967295)", defaults.seed, lambda value: _integer(value, 0, 2**32 - 1))
@@ -82,17 +82,17 @@ def _interactive(defaults=None):
 
 def _run_evaluation(args):
     if not getattr(args, "non_interactive", False):
-        print(f"Running {len(args.experiment)} experiments with {args.trials} trials per case…")
+        print(f"Running {len(args.experiment)} control benchmarks with {args.trials} trials per case…")
     bundle = evaluate(args.trials, args.seed, args.unit_price, args.experiment or EXPERIMENTS)
     write_bundle(bundle, args.output)
-    print(f"Completed {len(bundle['experiments'])} local experiments. Report: {args.output / 'report.md'}")
+    print(f"Completed {len(bundle['experiments'])} local control benchmarks. Report: {args.output / 'report.md'}")
     return 0
 
 
 def _activity_menu():
     while True:
         print("\nServerless SRSF")
-        print("  1. Document workflow\n  2. Experiments\n  3. Quit")
+        print("  1. Document workflow\n  2. Control benchmarks\n  3. Quit")
         try:
             choice = _prompt("Choose an activity", 1, lambda value: _integer(value, 1, 3))
             if choice == 3:
@@ -123,16 +123,16 @@ def main(argv=None):
         except (ValueError, OSError, RuntimeError) as exc:
             print(f"ssrsf: {exc}", file=sys.stderr)
             return 1
-    parser = argparse.ArgumentParser(prog="ssrsf", description="Interactive document workflow with Docker isolation and seven local security experiments")
+    parser = argparse.ArgumentParser(prog="ssrsf", description="Interactive document workflow with Docker isolation and seven local control benchmarks")
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("reference", help="Use authenticated Docker reference-app commands")
     commands.add_parser("interactive", help="Choose evaluation settings through guided prompts")
-    run = commands.add_parser("evaluate", help="Run paired local experiments and write measured evidence")
+    run = commands.add_parser("evaluate", help="Run paired local control benchmarks and write measured evidence")
     run.add_argument("--non-interactive", action="store_true", help="Run without prompts (for scripts and CI)")
     run.add_argument("--trials", type=int, default=30, help="Repeated trials per case (2–200)")
     run.add_argument("--seed", type=int, default=42)
     run.add_argument("--unit-price", type=float, default=.000001, help="Arbitrary cost units per accepted invocation")
-    run.add_argument("--experiment", choices=EXPERIMENTS, action="append", help="Run only these experiments (repeatable)")
+    run.add_argument("--benchmark", "--experiment", dest="experiment", choices=EXPERIMENTS, action="append", help="Run only these control benchmarks (repeatable)")
     run.add_argument("--output", type=Path, default=Path("results"))
     args = parser.parse_args(arguments)
     try:

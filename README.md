@@ -1,13 +1,13 @@
 # Serverless SRSF: A Site Reliability and Security Framework
 
-Serverless SRSF provides one interactive menu for an isolated document workflow and seven local security experiments. It implements selected recommendations from [Marin, Perino and Di Pietro’s “Serverless computing: a security perspective” (2022)](https://doi.org/10.1186/s13677-022-00347-w).
+Serverless SRSF provides one interactive menu for an isolated document workflow and seven local control benchmarks. It implements selected recommendations from [Marin, Perino and Di Pietro’s “Serverless computing: a security perspective” (2022)](https://doi.org/10.1186/s13677-022-00347-w).
 
 The implementation includes:
 
-- **Seven supporting experiments:** controlled comparisons and threat demonstrations covering events, authorization, dependencies, persistence, side channels, rollouts and billing.
+- **Seven supporting control benchmarks:** controlled comparisons and threat demonstrations covering events, authorization, dependencies, persistence, side channels, rollouts and billing.
 - **The Docker reference app:** separate stage workers, an authenticated guard and a transactional workflow controller in Docker Compose.
 
-The experiments run locally with Python 3.11+ and the standard library. The [document workflow](#docker-reference-app) uses isolated workers, a mandatory guard and a durable controller in Docker Compose. The delivered deployment uses Docker Compose on one host; cloud adapters and infrastructure are not included. The seven experiments measure individual behaviors, not the integrated framework’s end-to-end effectiveness or the reference app.
+The control benchmarks run locally with Python 3.11+ and the standard library. The [document workflow](#docker-reference-app) uses isolated workers, a mandatory guard and a durable controller in Docker Compose. The delivered deployment uses Docker Compose on one host; cloud adapters and infrastructure are not included. The seven control benchmarks measure individual behaviors, not the integrated framework’s end-to-end effectiveness or the reference app.
 
 ## Quick start
 
@@ -21,15 +21,15 @@ After `python3 -m pip install -e .`, `ssrsf` opens the same menu:
 
 ```text
 1. Document workflow
-2. Experiments
+2. Control benchmarks
 3. Quit
 ```
 
 - **1 — Document workflow:** automatically initializes missing credentials and starts or reuses the Docker Compose services, then opens the document controls. Have Docker Desktop/Engine running first.
-- **2 — Experiments:** prompts for which of the seven experiments to run, trials, seed, modeled price and output folder. This mode needs Python only and does not start Docker.
+- **2 — Control benchmarks:** prompts for which of the seven control benchmarks to run, trials, seed, modeled price and output folder. This mode needs Python only and does not start Docker.
 - **3 — Quit:** exits the application. Already running containers remain available until stopped with `docker compose down`.
 
-Both activities return to this main menu when finished. Press Enter to select Document workflow. A Docker startup failure returns to the menu so Experiments remains available. Ctrl+C cancels the current activity; end of input exits. Use `results-demo` as the experiment output folder to preserve the retained `results/` bundle.
+Both activities return to this main menu when finished. Press Enter to select Document workflow. A Docker startup failure returns to the menu so Control benchmarks remains available. Ctrl+C cancels the current activity; end of input exits. Use `results-demo` as the control benchmark output folder to preserve the retained `results/` bundle.
 
 ## Docker workflow: step by step
 
@@ -76,7 +76,7 @@ Workflow ID [last submission]:
 
 ### Step 4: return to the main menu
 
-Choose **0**. From the main menu, choose **2** for experiments or **3** to quit. Services keep running. To stop them, run `docker compose down` in a terminal; stored workflows and credentials are preserved.
+Choose **0**. From the main menu, choose **2** for control benchmarks or **3** to quit. Services keep running. To stop them, run `docker compose down` in a terminal; stored workflows and credentials are preserved.
 
 ## Docker reference app
 
@@ -96,7 +96,7 @@ Start Docker Desktop and choose **1 — Document workflow** from the main menu. 
 | **4** | Switch identity | Switch between `client`, `admin`, `client2`, and `investigator` |
 | **5** | Verify audit log | Cryptographically verify the SHA-256 HMAC audit log hash chain |
 | **6** | Check quota and security | Inspect remaining quota budget (20 req/min) and run container isolation checks |
-| **0** | Back to main menu | Returns to the Document / Experiments menu |
+| **0** | Back to main menu | Returns to the Document / Control benchmarks menu |
 
 Inputs are UTF-8 text, including newlines, with a 128-character limit. Empty or oversized input is rejected before submission. PDF and Word files are not accepted.
 
@@ -135,7 +135,7 @@ Transitions, completion outcomes and authenticated audit records commit in the s
 
 This is a single-host reference application with client and administrator roles and one identity per worker stage. A compromised worker can submit incorrect but schema-valid output for its assigned stage, consume tasks for that stage, or withhold completion; workflow order does not establish semantic correctness or availability. The guard, controller, Docker daemon, host and provisioned identities are trusted. Private-network HTTP is authenticated and signed but unencrypted. Direct TCP egress probes do not establish protection against every DNS/covert channel. The reference app does not provide syscall interception, TLS interception, distributed consensus or cloud/runtime isolation results. The reference app also enforces ownership, signed requests, rate-limiting quotas and cryptographic audit verification; see the [reference-app guide](docs/reference-app.md).
 
-Implementation: [`client.py`](src/ssrsf/prototype/client.py) supplies the host interface; [`src/ssrsf/prototype/`](src/ssrsf/prototype/), [`compose.yaml`](compose.yaml), [`scripts/prototype.py`](scripts/prototype.py). The existing seven-experiment reports remain scoped to their original fixtures; Compose verification is separate.
+Implementation: [`client.py`](src/ssrsf/prototype/client.py) supplies the host interface; [`src/ssrsf/prototype/`](src/ssrsf/prototype/), [`compose.yaml`](compose.yaml), [`scripts/prototype.py`](scripts/prototype.py). The existing seven-benchmark reports remain scoped to their original fixtures; Compose verification is separate.
 
 Python callers can also import `ReferenceApp` from `ssrsf.reference` to interact programmatically with the running Docker stack:
 
@@ -150,9 +150,9 @@ audit = app.audit()
 
 See the [reference-app guide](docs/reference-app.md) for identities, quota controls, and the Python API. After updating the source, run `python3 scripts/prototype.py init` and `docker compose up --build -d --wait` once to rebuild services and provision missing role credentials; existing state and credentials are preserved.
 
-## Experiments: step by step
+## Control benchmarks: step by step
 
-After document step 4, continue from the same main menu. Experiments use their own constructed fixtures and can run with Docker stopped. This sequence runs all seven groups into `results-demo`, preserving the retained `results/` bundle.
+After document step 4, continue from the same main menu. Control benchmarks use their own constructed fixtures and can run with Docker stopped. This sequence runs all seven groups into `results-demo`, preserving the retained `results/` bundle.
 
 ### Step 1: activity selection
 
@@ -168,9 +168,9 @@ Choose an activity [1]: 2
 Serverless SRSF - guided evaluation
 ```
 
-- This activity runs the seven built-in Python experiments. Docker may be stopped for this part.
+- This activity runs the seven built-in Python control benchmarks. Docker may be stopped for this part.
 
-- Each experiment supplies its own paired fixtures. Your document from the Docker demonstration is not its input.
+- Each control benchmark supplies its own paired fixtures. Your document from the Docker demonstration is not its input.
 
 - If starting a fresh terminal, run `PYTHONPATH=src python3 -m ssrsf`, then choose 2.
 
@@ -182,7 +182,7 @@ Serverless SRSF - guided evaluation
 | 4 / 5 | Persistence / side channels |
 | 6 / 7 | Rollouts / billing |
 
-- At the experiment-selection prompt, enter `all` for the complete seven-group demonstration.
+- At the benchmark-selection prompt, enter `all` for the complete seven-group demonstration.
 
 - A subset such as `1,4,7` or `events,persistence,billing` runs only those groups.
 
@@ -221,8 +221,8 @@ Random seed (0-4294967295) [42]: 42
 **Selected output for the complete demonstration**
 
 ```text
-Running 7 experiments with 30 trials per case...
-Completed 7 local experiments. Report: results-demo/report.md
+Running 7 control benchmarks with 30 trials per case...
+Completed 7 local control benchmarks. Report: results-demo/report.md
 ```
 
 - The runner executes the selected vulnerable and protected variants against controlled fixtures.
@@ -241,7 +241,7 @@ cat results-demo/report.md
 
 | File | What it contains |
 | --- | --- |
-| `report.md` | Findings, comparison tables and experiment limits |
+| `report.md` | Findings, comparison tables and control benchmark limits |
 | `metrics.csv` | Aggregate rates, latency and descriptive intervals |
 | `results.json` | Observations, configuration, host details and source hashes |
 | `SHA256SUMS` | Checksums for the generated report files |
@@ -258,29 +258,29 @@ This demonstration does not automatically create a new `validation.json`; the ca
 
 - Back in the application, choose 2 to configure another run, 1 for document work or 3 to quit.
 
-**Document processing, live Docker checks and the seven controlled experiments have distinct inputs and evidence.**
+**Document processing, live Docker checks and the seven controlled benchmarks have distinct inputs and evidence.**
 
-## Experiments and results
+## Control benchmarks and results
 
-Choose **2. Experiments** in the startup menu, or open the prompts directly. Options supplied to `evaluate` become defaults that you can accept or change:
+Choose **2. Control benchmarks** in the startup menu, or open the prompts directly. Options supplied to `evaluate` become defaults that you can accept or change:
 
 ```bash
 PYTHONPATH=src python3 -m ssrsf evaluate
-PYTHONPATH=src python3 -m ssrsf evaluate --experiment persistence --trials 20 --output results-persistence
+PYTHONPATH=src python3 -m ssrsf evaluate --benchmark persistence --trials 20 --output results-persistence
 ```
 
-Press Enter to accept each default. Invalid answers are retried; Ctrl+C or end of input cancels before evaluation starts. `ssrsf interactive` also opens guided experiments.
+Press Enter to accept each default. Invalid answers are retried; Ctrl+C or end of input cancels before evaluation starts. `ssrsf interactive` also opens guided control benchmarks.
 
-For scripts and CI, add `--non-interactive` to run all seven experiments or a selected subset without prompts:
+For scripts and CI, add `--non-interactive` to run all seven control benchmarks or a selected subset without prompts:
 
 ```bash
 PYTHONPATH=src python3 -m ssrsf evaluate --non-interactive --trials 30 --seed 42 --output results
-PYTHONPATH=src python3 -m ssrsf evaluate --non-interactive --experiment persistence --trials 20 --output results-persistence
+PYTHONPATH=src python3 -m ssrsf evaluate --non-interactive --benchmark persistence --trials 20 --output results-persistence
 ```
 
-Guided evaluation prompts for experiments, trials (2–200), seed, modeled invocation price and output folder. Defaults are all experiments, 30 trials, seed 42, price `0.000001` and `results/`. Existing report files in the chosen folder are replaced after the final prompt. Use `evaluate --help` for options.
+Guided evaluation prompts for control benchmarks, trials (2–200), seed, modeled invocation price and output folder. Defaults are all control benchmarks, 30 trials, seed 42, price `0.000001` and `results/`. Existing report files in the chosen folder are replaced after the final prompt. Use `evaluate --help` for options.
 
-| Experiment | What it examines | Article reference |
+| Control benchmark | What it examines | Article reference |
 |---|---|---|
 | Events | Validated, authenticated events versus unchecked input | Section 6, pp. 8–9 |
 | Authorization | Per-function capabilities versus gateway-only checks | Section 6, pp. 8–9 |
@@ -294,7 +294,7 @@ Read the [measured report](results/report.md) for findings and limitations. [res
 
 The paper is a review; the event schema, HMAC, artifact inventory, audit chain and quota settings are this project’s engineering choices. HMAC provides shared-key integrity, not replay protection. Artifact hashes detect changes, not dependency vulnerabilities.
 
-Every experiment includes a protected variant alongside its vulnerable comparison. Side channels use uniform public traces and the same work schedule for both roles; timing inference is measured, not assumed eliminated. Rollouts check the current reader policy on every invocation, including calls to stale replicas. Billing's `authenticated-quota` variant verifies credentials and exact invoke permission before metered dispatch, then applies the 20-call bucket cap. Forged, revoked and read-only fixture credentials are rejected even at low rates; valid invoke credentials can still be abused.
+Every control benchmark includes a protected variant alongside its vulnerable comparison. Side channels use uniform public traces and the same work schedule for both roles; timing inference is measured, not assumed eliminated. Rollouts check the current reader policy on every invocation, including calls to stale replicas. Billing's `authenticated-quota` variant verifies credentials and exact invoke permission before metered dispatch, then applies the 20-call bucket cap. Forged, revoked and read-only fixture credentials are rejected even at low rates; valid invoke credentials can still be abused.
 
 Rates and descriptive 95% Wilson intervals apply to constructed fixtures. Side-channel delays and stale replicas are deliberately configured. Billing uses synthetic time buckets and arbitrary cost units: alerts do not reject work, quotas can reject legitimate bursts, and low-rate attacks can pass both without the authorization gate. Rejection does not eliminate authentication or infrastructure costs. These results do not establish real-world attack prevalence, provider behavior or cloud costs.
 
@@ -318,7 +318,7 @@ The required stack is Python, Docker with Linux containers and Compose. SQLite i
 
 ## Verified reference-app behavior
 
-The recorded Python validation contains **87 passing tests**, covering controller/HTTP behavior, the complete reference-app menu and restored reference-app controls. Main-menu tests also cover automatic startup, return navigation, Docker failures and switching between document processing and experiments. Separate live Compose checks confirmed:
+The recorded Python validation contains **87 passing tests**, covering controller/HTTP behavior, the complete reference-app menu and restored reference-app controls. Main-menu tests also cover automatic startup, return navigation, Docker failures and switching between document processing and control benchmarks. Separate live Compose checks confirmed:
 
 - A complete ingest/extract/classify workflow and idempotent submission.
 - Typed input, normalized output and status lookup; scripted retry with the same workflow ID.
@@ -330,7 +330,7 @@ The recorded Python validation contains **87 passing tests**, covering controlle
 - Five submitted workflows completed under a smoke load of up to four concurrent clients. The observed median was approximately **1.482 seconds** for that run.
 - A completed workflow and valid audit chain survived a controller restart.
 
-These single-host observations are separate from the seven-experiment bundle. They are not a scalability study, a general egress guarantee or a comparative performance study. Run `check` and `load` to repeat the live checks; quota usage and host scheduling can affect results. CI includes a separate `container-prototype` job for these commands.
+These single-host observations are separate from the seven-benchmark bundle. They are not a scalability study, a general egress guarantee or a comparative performance study. Run `check` and `load` to repeat the live checks; quota usage and host scheduling can affect results. CI includes a separate `container-prototype` job for these commands.
 
 ## Tests and evidence verification
 
@@ -354,4 +354,4 @@ Repeat `--python` to validate additional installed interpreters. `results/valida
 
 The reference app places workers behind a guard/controller boundary under a trusted Docker host. Subprocess workspaces are not hostile-code sandboxes, replica objects are not distributed nodes, and markers/artifacts are inert.
 
-Cloud IAM enforcement, container escapes, adversarial co-location, CPU/cache channels, provider scheduling, real billing and distributed rollout safety remain outside the local evidence. The seven experiments measure fixture completion and timing; reference-app tests additionally exercise lease recovery, transaction rollback and restart persistence. Production availability SLOs, error budgets and multi-host incident recovery are not evaluated.
+Cloud IAM enforcement, container escapes, adversarial co-location, CPU/cache channels, provider scheduling, real billing and distributed rollout safety remain outside the local evidence. The seven control benchmarks measure fixture completion and timing; reference-app tests additionally exercise lease recovery, transaction rollback and restart persistence. Production availability SLOs, error budgets and multi-host incident recovery are not evaluated.

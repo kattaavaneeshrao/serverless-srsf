@@ -82,7 +82,7 @@ def _rate(metric):
 def render_report(bundle):
     config = bundle["configuration"]
     lines = ["# Local serverless security evaluation", "", f'Article: [{PAPER["title"]}]({PAPER["url"]}), Marin et al. (2022).', "",
-             "The article is a review with qualitative comparisons and countermeasure suggestions. It supplies no numerical benchmark results to reproduce. These are newly measured local experiments, with explicitly constructed workloads.", "",
+             "The article is a review with qualitative comparisons and countermeasure suggestions. It supplies no numerical benchmark results to reproduce. These are newly measured local control benchmarks, with explicitly constructed workloads.", "",
              f'Run: {bundle["timestamp_utc"]}; {config["trials"]} trials; seed {config["seed"]}; Python {platform.python_version()}.', "",
              "Raw observations, configuration, machine details and source hashes are in `results.json`. `metrics.csv` contains aggregate rates/timings. Timings include initialization and vary by host. Binomial Wilson intervals are descriptive; repeated fixtures and correlated buckets do not establish population effectiveness.", ""]
     for name, experiment in bundle["experiments"].items():

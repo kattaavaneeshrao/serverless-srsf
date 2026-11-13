@@ -1,12 +1,12 @@
 # Security scope
 
-The seven controlled experiments have a trust boundary at the local process and filesystem owner: fixture identities, shared keys and artifact inventories are trusted. Python authorization is not cloud IAM; subprocess workspaces are not sandboxes for hostile code.
+The seven controlled benchmarks have a trust boundary at the local process and filesystem owner: fixture identities, shared keys and artifact inventories are trusted. Python authorization is not cloud IAM; subprocess workspaces are not sandboxes for hostile code.
 
-Experiment markers and dependency artifacts are inert; storage is disposable. Hash inventories detect changes, not vulnerabilities. Side-channel experiments compare exposed traces/timing with uniform traces and role-independent work; real timing remains subject to scheduling noise. Rollout experiments compare stale replicas with a trusted current-policy gate. Billing adds exact credential/permission checks before metered dispatch alongside modeled prices, alerts and quotas. These checks reject unauthorized fixture requests, not abuse using valid invoke credentials, and do not establish production cost protection.
+Benchmark markers and dependency artifacts are inert; storage is disposable. Hash inventories detect changes, not vulnerabilities. Side-channel control benchmarks compare exposed traces/timing with uniform traces and role-independent work; real timing remains subject to scheduling noise. Rollout control benchmarks compare stale replicas with a trusted current-policy gate. Billing adds exact credential/permission checks before metered dispatch alongside modeled prices, alerts and quotas. These checks reject unauthorized fixture requests, not abuse using valid invoke credentials, and do not establish production cost protection.
 
 See the [methodology](research/methodology.md) for measurement assumptions and the [README](README.md#implementing-on-serverless-platforms) for the implemented deployment scope. Cloud isolation, durable retention and distributed enforcement require separate implementation and evaluation.
 
-The primary menu routes document work to the Docker reference app and runs the seven experiments without Docker. Automatic startup uses the current user’s Docker access; it does not make the host or Docker administrator untrusted.
+The primary menu routes document work to the Docker reference app and runs the seven control benchmarks without Docker. Automatic startup uses the current user’s Docker access; it does not make the host or Docker administrator untrusted.
 
 ## Docker reference app
 
@@ -14,7 +14,7 @@ The `ssrsf.prototype` stack places ingest/extract/classify workers in non-root c
 
 The controller binds expiring task grants to workflow IDs, immutable document versions, stages and input hashes. Stage advancement, retained idempotent outcomes and HMAC audit events share a transaction. Fixed-window submission quotas persist across restart. A crashed worker's lease expires; an identical committed completion returns the retained outcome. Audit write failure prevents transition commit. These properties do not establish correct computation by a compromised worker or protect availability from a worker that claims and withholds tasks. Each stage identity can claim any ready workflow for that stage; this is a fixture deployment with two document owners and privileged roles, not tenant-isolated worker scheduling.
 
-Local secret files live under ignored mode-0700 directories; each file is mounted read-only only into its required containers. Private-network HTTP uses bearer credentials without TLS. A compromised guard/controller or Docker host is outside the threat model. Audit-tail deletion needs an independently retained checkpoint to detect. No container escape, syscall/TLS interception, DNS/covert-channel prevention or production scalability claim is made. Container tests are separate from the seven original local experiments.
+Local secret files live under ignored mode-0700 directories; each file is mounted read-only only into its required containers. Private-network HTTP uses bearer credentials without TLS. A compromised guard/controller or Docker host is outside the threat model. Audit-tail deletion needs an independently retained checkpoint to detect. No container escape, syscall/TLS interception, DNS/covert-channel prevention or production scalability claim is made. Container tests are separate from the seven original local control benchmarks.
 
 ## Restored reference-app controls
 

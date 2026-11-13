@@ -37,7 +37,7 @@ def main():
         raise ValueError('Validation source record mismatch')
     if any(r['exit_code'] != 0 or r['tests'] <= 0 for r in validation['runs']):
         raise ValueError('Recorded tests did not pass')
-    print('Seven paper-scoped experiments, evidence hashes and recorded tests verified.')
+    print('Seven paper-scoped control benchmarks, evidence hashes and recorded tests verified.')
     return 0
 
 
