@@ -93,7 +93,7 @@ Start Docker Desktop and choose **1 — Document workflow** from the main menu. 
 | **1** or **Enter** | Enter document text | Type 1–128 characters; see the workflow ID, state, classification and processed text |
 | **2** | Process a UTF-8 text file | Enter its path; oversized files (>128 chars) are rejected before submission |
 | **3** | Check workflow status | Enter an ID, or press Enter to use your last submission |
-| **4** | Switch identity | Switch between `client` (standard user) and `admin` (privileged operator) |
+| **4** | Switch identity | Switch between `client`, `admin`, `client2`, and `investigator` |
 | **5** | Verify audit log | Cryptographically verify the SHA-256 HMAC audit log hash chain |
 | **6** | Check quota and security | Inspect remaining quota budget (20 req/min) and run container isolation checks |
 | **0** | Back to main menu | Returns to the Document / Experiments menu |
@@ -136,18 +136,6 @@ Transitions, completion outcomes and authenticated audit records commit in the s
 This is a single-host reference application with client and administrator roles and one identity per worker stage. A compromised worker can submit incorrect but schema-valid output for its assigned stage, consume tasks for that stage, or withhold completion; workflow order does not establish semantic correctness or availability. The guard, controller, Docker daemon, host and provisioned identities are trusted. Private-network HTTP is authenticated and signed but unencrypted. Direct TCP egress probes do not establish protection against every DNS/covert channel. The reference app does not provide syscall interception, TLS interception, distributed consensus or cloud/runtime isolation results. The reference app also enforces ownership, signed requests, rate-limiting quotas and cryptographic audit verification; see the [reference-app guide](docs/reference-app.md).
 
 Implementation: [`client.py`](src/ssrsf/prototype/client.py) supplies the host interface; [`src/ssrsf/prototype/`](src/ssrsf/prototype/), [`compose.yaml`](compose.yaml), [`scripts/prototype.py`](scripts/prototype.py). The existing seven-experiment reports remain scoped to their original fixtures; Compose verification is separate.
-
-## Reference-app controls
-
-The Docker application is the reference app. To keep day-to-day operations intuitive, the interactive menu provides **6 essential operational controls**:
-
-- **1. Enter document text:** Accepts 1–128 characters of UTF-8 text and dispatches to `/submit`, returning the generated workflow ID.
-- **2. Process a UTF-8 text file:** Reads a UTF-8 text file up to 129 characters, cleanly rejecting oversized documents before transmission.
-- **3. Read document / check status:** Queries `/status` by workflow ID (or press Enter for this identity's last submission) to display state, version, owner, classification, and raw text.
-- **4. Switch identity:** Toggles between `client` (standard user) and `admin` (privileged operator), demonstrating role-based access control (RBAC) enforced by the guard and controller.
-- **5. Verify audit log:** Cryptographically verifies the controller's SHA-256 HMAC audit log hash chain to detect any log tampering or sequence omission.
-- **6. Check quota and security:** Inspects the current token-bucket budget (20 requests per minute limit) and executes automated worker boundary and tamper-rejection probes.
-- **0. Back to main menu:** Returns to the Document / Experiments top-level menu.
 
 Python callers can also import `ReferenceApp` from `ssrsf.reference` to interact programmatically with the running Docker stack:
 
