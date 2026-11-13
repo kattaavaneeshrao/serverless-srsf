@@ -1,6 +1,6 @@
 # Serverless SRSF: A Site Reliability and Security Framework
 
-Serverless SRSF provides one interactive menu for an isolated document workflow and seven local control benchmarks. It implements selected recommendations from [Marin, Perino and Di Pietro’s “Serverless computing: a security perspective” (2022)](https://doi.org/10.1186/s13677-022-00347-w).
+Serverless SRSF is a Site Reliability and Security Framework that provides one interactive menu for an isolated document workflow and seven local control benchmarks. It implements selected recommendations from [Marin, Perino and Di Pietro’s “Serverless computing: a security perspective” (2022)](https://doi.org/10.1186/s13677-022-00347-w).
 
 The implementation includes:
 
